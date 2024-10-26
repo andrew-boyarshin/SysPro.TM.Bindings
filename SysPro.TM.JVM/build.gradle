@@ -1,0 +1,55 @@
+plugins {
+    id 'java-library'
+}
+
+group = 'io.github.andrew-boyarshin'
+version = ''
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    withSourcesJar()
+    withJavadocJar()
+
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(22)
+    }
+}
+
+def platforms = ["win-x64", "linux-x64", "linux-arm64"]
+
+jar {
+    for (platform in platforms) {
+        if (rootProject.hasProperty("syspro.tm.library.public.$platform")) {
+            from(file(rootProject.property("syspro.tm.library.public.$platform"))) {
+                into platform
+            }
+        }
+    }
+    if (rootProject.hasProperty("syspro.tm.library.public.jar")) {
+        from (zipTree(rootProject.property("syspro.tm.library.public.jar"))) {
+            for (platform in platforms) {
+                include("$platform/*")
+            }
+        }
+    }
+}
+
+tasks.register('privateJar', Jar) {
+    from(sourceSets.main.output) {
+    }
+
+    for (platform in platforms) {
+        if (rootProject.hasProperty("syspro.tm.library.private.$platform")) {
+            from(file(rootProject.property("syspro.tm.library.private.$platform"))) {
+                into platform
+            }
+        }
+    }
+
+    archiveBaseName = "${archiveBaseName.get()}-PRIVATE"
+}
+
+jar.dependsOn('privateJar')

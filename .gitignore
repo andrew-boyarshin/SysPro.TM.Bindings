@@ -1,0 +1,29 @@
+### IntelliJ IDEA ###
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+### Eclipse ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+### NetBeans ###
+/SysPro.TM.JVM/nbproject/private/
+/SysPro.TM.JVM/nbbuild/
+/SysPro.TM.JVM/dist/
+/SysPro.TM.JVM/nbdist/
+/SysPro.TM.JVM/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+### Mac OS ###
+.DS_Store
