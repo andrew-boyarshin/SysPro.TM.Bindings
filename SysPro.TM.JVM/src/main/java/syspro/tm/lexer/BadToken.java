@@ -1,5 +1,7 @@
 package syspro.tm.lexer;
 
+import syspro.tm.parser.SyntaxKind;
+
 public final class BadToken extends Token {
 
     public BadToken(int start, int end, int leadingTriviaLength, int trailingTriviaLength) {
@@ -29,5 +31,10 @@ public final class BadToken extends Token {
     @Override
     public BadToken withTrailingTriviaLength(int trailingTriviaLength) {
         return this.trailingTriviaLength == trailingTriviaLength ? this : new BadToken(start, end, leadingTriviaLength, trailingTriviaLength);
+    }
+
+    @Override
+    public SyntaxKind toSyntaxKind() {
+        return SyntaxKind.Bad;
     }
 }

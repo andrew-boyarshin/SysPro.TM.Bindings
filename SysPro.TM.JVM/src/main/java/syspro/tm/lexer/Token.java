@@ -1,5 +1,7 @@
 package syspro.tm.lexer;
 
+import syspro.tm.parser.AnySyntaxKind;
+
 public abstract sealed class Token permits BadToken, IdentifierToken, IndentationToken, KeywordToken, LiteralToken, SymbolToken {
 
     public final int start;
@@ -41,4 +43,6 @@ public abstract sealed class Token permits BadToken, IdentifierToken, Indentatio
      * Make a copy of the current token with a different {@link Token#trailingTriviaLength} value.
      */
     public abstract Token withTrailingTriviaLength(int trailingTriviaLength);
+
+    public abstract AnySyntaxKind toSyntaxKind();
 }

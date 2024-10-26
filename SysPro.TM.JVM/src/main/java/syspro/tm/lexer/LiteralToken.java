@@ -1,5 +1,7 @@
 package syspro.tm.lexer;
 
+import syspro.tm.parser.SyntaxKind;
+
 public sealed abstract class LiteralToken extends Token permits BooleanLiteralToken, IntegerLiteralToken, RuneLiteralToken, StringLiteralToken {
 
     public final BuiltInType type;
@@ -21,4 +23,7 @@ public sealed abstract class LiteralToken extends Token permits BooleanLiteralTo
 
     @Override
     public abstract LiteralToken withTrailingTriviaLength(int trailingTriviaLength);
+
+    @Override
+    public abstract SyntaxKind toSyntaxKind();
 }

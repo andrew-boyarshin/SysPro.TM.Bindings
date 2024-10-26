@@ -1,5 +1,7 @@
 package syspro.tm.lexer;
 
+import syspro.tm.parser.SyntaxKind;
+
 import java.util.Objects;
 
 public final class IdentifierToken extends Token {
@@ -46,5 +48,10 @@ public final class IdentifierToken extends Token {
 
     public IdentifierToken withContextualKeyword(Keyword contextualKeyword) {
         return this.contextualKeyword == contextualKeyword ? this : new IdentifierToken(start, end, leadingTriviaLength, trailingTriviaLength, value, contextualKeyword);
+    }
+
+    @Override
+    public SyntaxKind toSyntaxKind() {
+        return SyntaxKind.Identifier;
     }
 }

@@ -1,6 +1,6 @@
 package syspro.tm.lexer;
 
-import java.util.Objects;
+import syspro.tm.parser.SyntaxKind;
 
 public final class RuneLiteralToken extends LiteralToken {
 
@@ -46,5 +46,10 @@ public final class RuneLiteralToken extends LiteralToken {
 
     public RuneLiteralToken withValue(int value) {
         return this.value == value ? this : new RuneLiteralToken(start, end, leadingTriviaLength, trailingTriviaLength, value);
+    }
+
+    @Override
+    public SyntaxKind toSyntaxKind() {
+        return SyntaxKind.Rune;
     }
 }

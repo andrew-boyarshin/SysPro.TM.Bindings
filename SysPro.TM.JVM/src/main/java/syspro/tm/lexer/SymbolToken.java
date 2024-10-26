@@ -1,6 +1,6 @@
 package syspro.tm.lexer;
 
-import java.util.Objects;
+import syspro.tm.parser.AnySyntaxKind;
 
 public final class SymbolToken extends Token {
 
@@ -39,5 +39,10 @@ public final class SymbolToken extends Token {
 
     public SymbolToken withSymbol(Symbol symbol) {
         return this.symbol == symbol ? this : new SymbolToken(start, end, leadingTriviaLength, trailingTriviaLength, symbol);
+    }
+
+    @Override
+    public AnySyntaxKind toSyntaxKind() {
+        return symbol;
     }
 }

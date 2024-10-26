@@ -1,5 +1,7 @@
 package syspro.tm.lexer;
 
+import syspro.tm.parser.SyntaxKind;
+
 /**
  * Zero-width synthetic token that signifies change in indentation level.
  * Represents traditional approach to parsing indentation-based languages.
@@ -53,5 +55,10 @@ public final class IndentationToken extends Token {
 
     public IndentationToken withDifference(int difference) {
         return this.difference == difference ? this : new IndentationToken(start, end, leadingTriviaLength, trailingTriviaLength, difference);
+    }
+
+    @Override
+    public SyntaxKind toSyntaxKind() {
+        return isIndent() ? SyntaxKind.Indent : SyntaxKind.Dedent;
     }
 }

@@ -1,5 +1,7 @@
 package syspro.tm.lexer;
 
+import syspro.tm.parser.AnySyntaxKind;
+
 public final class KeywordToken extends Token {
 
     public final Keyword keyword;
@@ -37,5 +39,10 @@ public final class KeywordToken extends Token {
 
     public KeywordToken withKeyword(Keyword keyword) {
         return this.keyword == keyword ? this : new KeywordToken(start, end, leadingTriviaLength, trailingTriviaLength, keyword);
+    }
+
+    @Override
+    public AnySyntaxKind toSyntaxKind() {
+        return keyword;
     }
 }

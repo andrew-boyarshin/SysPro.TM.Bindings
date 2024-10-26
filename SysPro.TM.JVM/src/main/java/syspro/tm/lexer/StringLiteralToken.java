@@ -1,5 +1,7 @@
 package syspro.tm.lexer;
 
+import syspro.tm.parser.SyntaxKind;
+
 import java.util.Objects;
 
 public final class StringLiteralToken extends LiteralToken {
@@ -39,5 +41,10 @@ public final class StringLiteralToken extends LiteralToken {
 
     public StringLiteralToken withValue(String value) {
         return Objects.equals(this.value, value) ? this : new StringLiteralToken(start, end, leadingTriviaLength, trailingTriviaLength, value);
+    }
+
+    @Override
+    public SyntaxKind toSyntaxKind() {
+        return SyntaxKind.String;
     }
 }

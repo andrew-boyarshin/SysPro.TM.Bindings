@@ -1,5 +1,7 @@
 package syspro.tm.lexer;
 
+import syspro.tm.parser.SyntaxKind;
+
 public final class IntegerLiteralToken extends LiteralToken {
 
     public final boolean hasTypeSuffix;
@@ -64,5 +66,10 @@ public final class IntegerLiteralToken extends LiteralToken {
 
     public IntegerLiteralToken withValue(long value) {
         return this.value == value ? this : new IntegerLiteralToken(start, end, leadingTriviaLength, trailingTriviaLength, type, hasTypeSuffix, value);
+    }
+
+    @Override
+    public SyntaxKind toSyntaxKind() {
+        return SyntaxKind.Integer;
     }
 }

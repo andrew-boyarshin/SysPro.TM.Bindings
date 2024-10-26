@@ -1,5 +1,7 @@
 package syspro.tm.lexer;
 
+import syspro.tm.parser.SyntaxKind;
+
 public final class BooleanLiteralToken extends LiteralToken {
 
     public final boolean value;
@@ -36,5 +38,10 @@ public final class BooleanLiteralToken extends LiteralToken {
 
     public BooleanLiteralToken withValue(boolean value) {
         return this.value == value ? this : new BooleanLiteralToken(start, end, leadingTriviaLength, trailingTriviaLength, value);
+    }
+
+    @Override
+    public SyntaxKind toSyntaxKind() {
+        return SyntaxKind.Boolean;
     }
 }
