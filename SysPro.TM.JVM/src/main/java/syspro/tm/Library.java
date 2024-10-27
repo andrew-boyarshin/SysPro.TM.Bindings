@@ -1,7 +1,7 @@
 package syspro.tm;
 
 import syspro.tm.lexer.*;
-import syspro.tm.parser.Parser;
+import syspro.tm.parser.*;
 
 import java.io.IOException;
 import java.lang.foreign.*;
@@ -20,62 +20,113 @@ public final class Library {
     private static final SymbolLookup lookup;
     private static final String NATIVE_LIBRARY_TEMP_DIRECTORY_PREFIX = "SysPro.TM.JVM";
     private static final String LOCK_FILE_PREFIX = "lock-";
+    private static final IdentityHashMap<Object, Long> objectHandles = new IdentityHashMap<>();
+    private static final ArrayList<Object> objectReferences = new ArrayList<>();
+    private static final ValueLayout.OfLong JVM_HANDLE_LAYOUT = ValueLayout.JAVA_LONG;
+    private static final ValueLayout.OfLong LIB_HANDLE_LAYOUT = ValueLayout.JAVA_LONG;
+    private static final AddressLayout VMT_STUB_LAYOUT = ValueLayout.ADDRESS;
+    private static final AddressLayout ARRAY_LAYOUT = ValueLayout.ADDRESS;
+    private static final AddressLayout STRING_LAYOUT = ValueLayout.ADDRESS;
+    private static final Class<Long> JVM_HANDLE_CLASS = long.class;
+    private static final Class<Long> LIB_HANDLE_CLASS = long.class;
+    private static final Class<MemorySegment> ARRAY_CLASS = MemorySegment.class;
+    private static final Class<MemorySegment> STRING_CLASS = MemorySegment.class;
+    private static final List<ObjectDescriptor<?>> layouts = List.of(
+            new TokenObjectDescriptor(),
+            new IterableObjectDescriptor(),
+            new LexerObjectDescriptor(),
+            new ParserObjectDescriptor(),
+            new ParseResultObjectDescriptor(),
+            new SyntaxNodeObjectDescriptor(),
+            new TextSpanObjectDescriptor(),
+            new DiagnosticObjectDescriptor(),
+            new ErrorCodeObjectDescriptor(),
+            new DiagnosticArgumentObjectDescriptor()
+    );
     private static volatile boolean hasFatalFailures;
     private static volatile Path nativeLibraryLockFile;
+    private static volatile MethodHandle registerObjectResult;
+    private static volatile MethodHandle registerTask1Solution;
+    private static volatile MemorySegment lexImpl;
+    private static volatile MethodHandle registerTask2Solution;
+    private static volatile MemorySegment parseImpl;
+
 
     static {
         final var libraryFile = extractNativeLibrary();
         lookup = SymbolLookup.libraryLookup(libraryFile, arena);
+        final var nullHandle = toObjectHandle(null);
+        assert nullHandle == 0;
+
+        final var registerRegistrarHandle = linker.downcallHandle(
+                findFunction("RegisterRegistrar"),
+                FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+        );
+
+        try (Arena arena = Arena.ofConfined()) {
+            new LibraryCall(arena) {
+
+                @Override
+                public void call() throws Throwable {
+                    registerRegistrarHandle.invokeExact(
+                            linker.upcallStub(
+                                    MethodHandles.lookup().findStatic(
+                                            Library.class, "registerObjectImpl",
+                                            MethodType.methodType(void.class, LIB_HANDLE_CLASS, int.class, int.class, ARRAY_CLASS)
+                                    ),
+                                    FunctionDescriptor.ofVoid(
+                                            LIB_HANDLE_LAYOUT,
+                                            ValueLayout.JAVA_INT,
+                                            ValueLayout.JAVA_INT,
+                                            ARRAY_LAYOUT
+                                    ),
+                                    Library.arena
+                            )
+                    );
+                }
+            }.makeCall();
+        }
     }
 
     private Library() {
     }
 
-    private static volatile MethodHandle registerTask1Solution;
+    private static MethodHandle registerObjectResult() {
+        final var handle = Library.registerObjectResult;
+        if (handle == null) {
+            return Library.registerObjectResult = linker.downcallHandle(
+                    findFunction("RegisterObjectResult"),
+                    FunctionDescriptor.ofVoid(LIB_HANDLE_LAYOUT, ARRAY_LAYOUT)
+            );
+        }
+
+        return handle;
+    }
 
     private static MethodHandle registerTask1Solution() {
         final var handle = Library.registerTask1Solution;
         if (handle == null) {
-            final var fn = findFunction("RegisterTask1Solution");
-            final var desc = FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_INT);
-            return Library.registerTask1Solution = linker.downcallHandle(fn, desc);
+            return Library.registerTask1Solution = linker.downcallHandle(
+                    findFunction("RegisterTask1Solution"),
+                    FunctionDescriptor.ofVoid(JVM_HANDLE_LAYOUT, ValueLayout.JAVA_INT)
+            );
         }
 
         return handle;
     }
-
-    private static volatile MethodHandle registerTask1LexResult;
-
-    private static MethodHandle registerTask1LexResult() {
-        final var handle = Library.registerTask1LexResult;
-        if (handle == null) {
-            final var fn = findFunction("RegisterTask1LexResult");
-            final var desc = FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS);
-            return Library.registerTask1LexResult = linker.downcallHandle(fn, desc);
-        }
-
-        return handle;
-    }
-
-    private static volatile MemorySegment lexImpl;
 
     private static MemorySegment lexImpl() {
         final var lexImpl = Library.lexImpl;
         if (lexImpl == null) {
             try {
-                final var handle = MethodHandles.lookup().findStatic(
+                return Library.lexImpl = linker.upcallStub(
+                        MethodHandles.lookup().findStatic(
                                 Library.class, "lexImpl",
-                                MethodType.methodType(long.class, long.class, MemorySegment.class)
+                                MethodType.methodType(JVM_HANDLE_CLASS, JVM_HANDLE_CLASS, STRING_CLASS)
+                        ),
+                        FunctionDescriptor.of(JVM_HANDLE_LAYOUT, JVM_HANDLE_LAYOUT, STRING_LAYOUT),
+                        arena
                 );
-
-                final var desc = FunctionDescriptor.of(
-                        ValueLayout.JAVA_LONG,
-                        ValueLayout.JAVA_LONG,
-                        ValueLayout.ADDRESS
-                );
-
-                return Library.lexImpl = linker.upcallStub(handle, desc, arena);
-
             } catch (NoSuchMethodException | IllegalAccessException e) {
                 throw new RuntimeException(e);
             }
@@ -84,14 +135,43 @@ public final class Library {
         return lexImpl;
     }
 
-    private static final IdentityHashMap<Object, Integer> objectHandles = new IdentityHashMap<>();
-    private static final ArrayList<Object> objectReferences = new ArrayList<>();
+    private static MethodHandle registerTask2Solution() {
+        final var handle = Library.registerTask2Solution;
+        if (handle == null) {
+            return Library.registerTask2Solution = linker.downcallHandle(
+                    findFunction("RegisterTask2Solution"),
+                    FunctionDescriptor.ofVoid(JVM_HANDLE_LAYOUT)
+            );
+        }
 
-    private static int toObjectHandle(Object object) {
+        return handle;
+    }
+
+    private static MemorySegment parseImpl() {
+        final var parseImpl = Library.parseImpl;
+        if (parseImpl == null) {
+            try {
+                return Library.parseImpl = linker.upcallStub(
+                        MethodHandles.lookup().findStatic(
+                                Library.class, "parseImpl",
+                                MethodType.methodType(JVM_HANDLE_CLASS, JVM_HANDLE_CLASS, STRING_CLASS)
+                        ),
+                        FunctionDescriptor.of(JVM_HANDLE_LAYOUT, JVM_HANDLE_LAYOUT, STRING_LAYOUT),
+                        arena
+                );
+            } catch (NoSuchMethodException | IllegalAccessException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        return parseImpl;
+    }
+
+    private static long toObjectHandle(Object object) {
         synchronized (objectHandles) {
             final var handle = objectHandles.get(object);
             if (handle == null) {
-                final var newHandle = objectReferences.size();
+                final long newHandle = objectReferences.size();
                 objectReferences.add(object);
                 objectHandles.put(object, newHandle);
                 return newHandle;
@@ -108,26 +188,50 @@ public final class Library {
         }
     }
 
-    public static void registerTask1Solution(Lexer impl, TestMode mode) {
-        try (final var arena = Arena.ofConfined()) {
-            final var nativeStruct = arena.allocate(MemoryLayout.structLayout(ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+    private static <T> T fromObjectHandle(long handle) {
+        return fromObjectHandle(Math.toIntExact(handle));
+    }
 
-            // TODO: real layout is Address, value is Integer, assignment is Long.
-            nativeStruct.set(ValueLayout.JAVA_LONG, 0, toObjectHandle(impl));
-            nativeStruct.set(ValueLayout.ADDRESS, ValueLayout.ADDRESS.byteSize(), lexImpl());
+    @SuppressWarnings("unchecked")
+    private static void registerObjectImpl(long request, int kind, int count, MemorySegment handleArraySegment) {
+        handleArraySegment = handleArraySegment.reinterpret(count * JVM_HANDLE_LAYOUT.byteSize());
+        final var desc = (ObjectDescriptor<Object>) layouts.get(kind);
+        try (final var arena = Arena.ofConfined()) {
+            final var list = new ArrayList<>(count);
+            for (int i = 0; i < count; i++) {
+                list.add(fromObjectHandle(handleArraySegment.getAtIndex(JVM_HANDLE_LAYOUT, i)));
+            }
 
             new LibraryCall(arena) {
 
                 @Override
                 public void call() throws Throwable {
-                    registerTask1Solution().invokeExact(nativeStruct, mode.toMask());
+                    final var call = this;
+                    final var lexResult = new ListSerializer<>(desc.layout) {
+
+                        @Override
+                        public void serializeItem(Object token, MemorySegment segment) {
+                            desc.serialize(token, segment, call);
+                        }
+                    }.serializeList(list);
+
+                    registerObjectResult().invokeExact(request, lexResult);
+                }
+            }.makeCall();
+        }
+    }
+
+    public static void registerTask1Solution(Lexer impl, TestMode mode) {
+        try (final var arena = Arena.ofConfined()) {
+            new LibraryCall(arena) {
+
+                @Override
+                public void call() throws Throwable {
+                    registerTask1Solution().invokeExact(toObjectHandle(impl), mode.toMask());
                 }
             }.makeCall();
         } finally {
-            if (hasFatalFailures) {
-                System.err.println("Fatal errors occurred.");
-                System.exit(1);
-            }
+            exitOnFatalErrors();
         }
     }
 
@@ -136,144 +240,51 @@ public final class Library {
     }
 
     private static long lexImpl(long impl, MemorySegment codeSegment) {
-        final Lexer lexer = fromObjectHandle(Math.toIntExact(impl));
-        final var code = codeSegment.reinterpret(Integer.MAX_VALUE).getString(0);
-        try (final var arena = Arena.ofConfined()) {
-            final var result = new long[1];
-            new LibraryCall(arena) {
-
-                @Override
-                public void call() throws Throwable {
-                    final var lexResult = serialize(this, lexer.lex(code));
-                    result[0] = ((MemorySegment)registerTask1LexResult().invokeExact(lexResult)).address();
-                }
-            }.makeCall();
-            return result[0];
+        try {
+            final Lexer lexer = fromObjectHandle(impl);
+            final var code = codeSegment.reinterpret(Integer.MAX_VALUE).getString(0);
+            return toObjectHandle(List.copyOf(lexer.lex(code)));
+        } catch (Throwable e) {
+            fatalError(e);
+            return toObjectHandle(null);
         }
     }
 
     public static void registerTask2Solution(Parser impl) {
         try (final var arena = Arena.ofConfined()) {
-            System.err.println("Task 2 checking is not yet allowed");
-            hasFatalFailures = true;
-        } finally {
-            if (hasFatalFailures) {
-                System.err.println("Fatal errors occurred.");
-                System.exit(1);
-            }
-        }
-    }
+            new LibraryCall(arena) {
 
-    private static MemorySegment serialize(LibraryCall call, List<Token> tokenList) {
-        final var nativeDesc = MemoryLayout.structLayout(
-                ValueLayout.JAVA_INT,  // kind
-                ValueLayout.JAVA_INT,  // start
-                ValueLayout.JAVA_INT,  // end
-                ValueLayout.JAVA_INT,  // leadingTriviaLength
-                ValueLayout.JAVA_INT,  // trailingTriviaLength
-                ValueLayout.JAVA_INT,  // type
-                ValueLayout.ADDRESS,   // value1
-                ValueLayout.JAVA_LONG, // value2
-                ValueLayout.JAVA_LONG  // value3
-        );
-        final var kind = ValueLayout.JAVA_INT.scale(0, 0);
-        final var start = ValueLayout.JAVA_INT.scale(0, 1);
-        final var end = ValueLayout.JAVA_INT.scale(0, 2);
-        final var leadingTriviaLength = ValueLayout.JAVA_INT.scale(0, 3);
-        final var trailingTriviaLength = ValueLayout.JAVA_INT.scale(0, 4);
-        final var type = ValueLayout.JAVA_INT.scale(0, 5);
-        final var value1 = ValueLayout.JAVA_INT.scale(0, 6);
-        final var value2 = ValueLayout.JAVA_LONG.scale(value1 + ValueLayout.ADDRESS.byteSize(), 0);
-        final var value3 = ValueLayout.JAVA_LONG.scale(value1 + ValueLayout.ADDRESS.byteSize(), 1);
-        return new ListSerializer<Token>(nativeDesc) {
-
-            @Override
-            public void serializeItem(Token token, MemorySegment segment1) {
-                segment1.set(ValueLayout.JAVA_INT, kind, tokenKind(token));
-                segment1.set(ValueLayout.JAVA_INT, start, token.start);
-                segment1.set(ValueLayout.JAVA_INT, end, token.end);
-                segment1.set(ValueLayout.JAVA_INT, leadingTriviaLength, token.leadingTriviaLength);
-                segment1.set(ValueLayout.JAVA_INT, trailingTriviaLength, token.trailingTriviaLength);
-                switch (token) {
-                    case IdentifierToken identifierToken:
-                        segment1.set(ValueLayout.ADDRESS, value1, call.serializeString(identifierToken.value));
-                        segment1.set(ValueLayout.JAVA_LONG, value3, identifierToken.contextualKeyword != null ? tokenKind(identifierToken.contextualKeyword) : 0);
-                        break;
-                    case BadToken _, IndentationToken _, KeywordToken _, SymbolToken _:
-                        break;
-                    case BooleanLiteralToken literalToken:
-                        segment1.set(ValueLayout.JAVA_INT, type, literalToken.type.ordinal());
-                        segment1.set(ValueLayout.JAVA_LONG, value2, literalToken.value ? 1 : 0);
-                        break;
-                    case IntegerLiteralToken literalToken:
-                        segment1.set(ValueLayout.JAVA_INT, type, literalToken.type.ordinal());
-                        segment1.set(ValueLayout.JAVA_LONG, value2, literalToken.value);
-                        segment1.set(ValueLayout.JAVA_LONG, value3, literalToken.hasTypeSuffix ? 1 : 0);
-                        break;
-                    case RuneLiteralToken literalToken:
-                        segment1.set(ValueLayout.JAVA_INT, type, literalToken.type.ordinal());
-                        segment1.set(ValueLayout.JAVA_LONG, value3, literalToken.value);
-                        break;
-                    case StringLiteralToken literalToken:
-                        segment1.set(ValueLayout.JAVA_INT, type, literalToken.type.ordinal());
-                        segment1.set(ValueLayout.ADDRESS, value1, call.serializeString(literalToken.value));
-                        break;
+                @Override
+                public void call() throws Throwable {
+                    registerTask2Solution().invokeExact(toObjectHandle(impl));
                 }
-            }
-        }.serializeList(tokenList);
+            }.makeCall();
+        } finally {
+            exitOnFatalErrors();
+        }
     }
 
-    private static abstract class LibraryCall {
-        private final Arena arena;
-        private final IdentityHashMap<String, MemorySegment> strings = new IdentityHashMap<>();
-
-        protected MemorySegment serializeString(String string) {
-            final var interned = string.intern();
-            var segment = strings.get(interned);
-            if (segment == null) {
-                segment = arena.allocateFrom(string);
-                strings.put(interned, segment);
-            }
-            return segment;
+    private static long parseImpl(long impl, MemorySegment codeSegment) {
+        try {
+            final Parser parser = fromObjectHandle(impl);
+            final var code = codeSegment.reinterpret(Integer.MAX_VALUE).getString(0);
+            return toObjectHandle(parser.parse(code));
+        } catch (Throwable e) {
+            fatalError(e);
+            return toObjectHandle(null);
         }
-
-        public LibraryCall(Arena arena) {
-            this.arena = arena;
-        }
-
-        public final void makeCall() {
-            try {
-                call();
-            } catch (Throwable e) {
-                e.printStackTrace();
-                hasFatalFailures = true;
-            }
-        }
-
-        public abstract void call() throws Throwable;
     }
 
-    private static abstract class ListSerializer<T> {
-        private final MemoryLayout itemLayout;
-
-        public ListSerializer(MemoryLayout itemLayout) {
-            assert itemLayout != null;
-            this.itemLayout = itemLayout;
+    private static void exitOnFatalErrors() {
+        if (hasFatalFailures) {
+            System.err.println("Fatal errors occurred.");
+            System.exit(1);
         }
+    }
 
-        public MemorySegment serializeList(List<T> list) {
-            final var size = list.size();
-            final var totalByteCount = itemLayout.scale(ValueLayout.JAVA_LONG.byteSize(), size);
-            final var segment = arena.allocate(totalByteCount);
-            segment.set(ValueLayout.JAVA_LONG, 0, size);
-            for (int i = 0; i < size; i++) {
-                final var slice = segment.asSlice(itemLayout.scale(ValueLayout.JAVA_LONG.byteSize(), i), itemLayout);
-                serializeItem(list.get(i), slice);
-            }
-            return segment;
-        }
-
-        public abstract void serializeItem(T token, MemorySegment segment);
+    private static void fatalError(Throwable e) {
+        e.printStackTrace();
+        hasFatalFailures = true;
     }
 
     private static int tokenKind(Token token) {
@@ -296,6 +307,23 @@ public final class Library {
 
     private static int tokenKind(Symbol symbol) {
         return 200 + symbol.ordinal();
+    }
+
+    private static int tokenKind(SyntaxKind kind) {
+        final var ordinal = kind.ordinal();
+        if (ordinal < SyntaxKind.SOURCE_TEXT.ordinal()) {
+            return ordinal;
+        }
+        return 2000 + ordinal - SyntaxKind.SOURCE_TEXT.ordinal();
+    }
+
+    private static int syntaxKind(AnySyntaxKind kind) {
+        return switch (kind) {
+            case Keyword keyword -> tokenKind(keyword);
+            case Symbol symbol -> tokenKind(symbol);
+            case SyntaxKind nonTerminalKind -> tokenKind(nonTerminalKind);
+            default -> throw new IllegalStateException("Unexpected value: " + kind);
+        };
     }
 
     private static Path extractNativeLibrary() {
@@ -492,6 +520,375 @@ public final class Library {
                 case LINUX_AARCH64 -> true;
                 case WINDOWS_AMD64, LINUX_AMD64 -> false;
             };
+        }
+    }
+
+    private static abstract class ObjectDescriptor<T> {
+        private final MemoryLayout layout;
+
+        protected ObjectDescriptor(MemoryLayout layout) {
+            this.layout = layout;
+        }
+
+        public abstract void serialize(T object, MemorySegment segment, LibraryCall call);
+    }
+
+    private static abstract class LibraryCall {
+        private final Arena arena;
+        private final IdentityHashMap<String, MemorySegment> strings = new IdentityHashMap<>();
+
+        public LibraryCall(Arena arena) {
+            assert arena != null;
+            this.arena = arena;
+        }
+
+        protected MemorySegment serializeString(String string) {
+            final var interned = string.intern();
+            var segment = strings.get(interned);
+            if (segment == null) {
+                segment = arena.allocateFrom(string);
+                strings.put(interned, segment);
+            }
+            return segment;
+        }
+
+        protected MemorySegment serializeObjectHandles(List<Long> items) {
+            final var size = items.size();
+            final var segment = arena.allocate(JVM_HANDLE_LAYOUT, size);
+            for (var i = 0; i < size; i++) {
+                segment.setAtIndex(JVM_HANDLE_LAYOUT, i, items.get(i));
+            }
+            return segment;
+        }
+
+        public final void makeCall() {
+            try {
+                call();
+            } catch (Throwable e) {
+                fatalError(e);
+            }
+        }
+
+        public abstract void call() throws Throwable;
+    }
+
+    private static abstract class ListSerializer<T> {
+        private final MemoryLayout itemLayout;
+
+        public ListSerializer(MemoryLayout itemLayout) {
+            assert itemLayout != null;
+            this.itemLayout = itemLayout;
+        }
+
+        public MemorySegment serializeList(List<T> list) {
+            final var size = list.size();
+            final var totalByteCount = itemLayout.scale(ValueLayout.JAVA_LONG.byteSize(), size);
+            final var segment = arena.allocate(totalByteCount);
+            segment.set(ValueLayout.JAVA_LONG, 0, size);
+            for (int i = 0; i < size; i++) {
+                final var slice = segment.asSlice(itemLayout.scale(ValueLayout.JAVA_LONG.byteSize(), i), itemLayout);
+                serializeItem(list.get(i), slice);
+            }
+            return segment;
+        }
+
+        public abstract void serializeItem(T token, MemorySegment segment);
+    }
+
+    private static final class TokenObjectDescriptor extends ObjectDescriptor<Token> {
+        final long kind = ValueLayout.JAVA_INT.scale(0, 0);
+        final long start = ValueLayout.JAVA_INT.scale(0, 1);
+        final long end = ValueLayout.JAVA_INT.scale(0, 2);
+        final long leadingTriviaLength = ValueLayout.JAVA_INT.scale(0, 3);
+        final long trailingTriviaLength = ValueLayout.JAVA_INT.scale(0, 4);
+        final long type = ValueLayout.JAVA_INT.scale(0, 5);
+        final long value1 = ValueLayout.JAVA_INT.scale(0, 6);
+        final long value2 = ValueLayout.JAVA_LONG.scale(value1 + ValueLayout.ADDRESS.byteSize(), 0);
+        final long value3 = ValueLayout.JAVA_LONG.scale(value1 + ValueLayout.ADDRESS.byteSize(), 1);
+
+        public TokenObjectDescriptor() {
+            super(
+                    MemoryLayout.structLayout(
+                            ValueLayout.JAVA_INT,  // kind
+                            ValueLayout.JAVA_INT,  // start
+                            ValueLayout.JAVA_INT,  // end
+                            ValueLayout.JAVA_INT,  // leadingTriviaLength
+                            ValueLayout.JAVA_INT,  // trailingTriviaLength
+                            ValueLayout.JAVA_INT,  // type
+                            ValueLayout.ADDRESS,   // value1
+                            ValueLayout.JAVA_LONG, // value2
+                            ValueLayout.JAVA_LONG  // value3
+                    )
+            );
+        }
+
+        @Override
+        public void serialize(Token token, MemorySegment segment, LibraryCall call) {
+            segment.set(ValueLayout.JAVA_INT, kind, tokenKind(token));
+            segment.set(ValueLayout.JAVA_INT, start, token.start);
+            segment.set(ValueLayout.JAVA_INT, end, token.end);
+            segment.set(ValueLayout.JAVA_INT, leadingTriviaLength, token.leadingTriviaLength);
+            segment.set(ValueLayout.JAVA_INT, trailingTriviaLength, token.trailingTriviaLength);
+            switch (token) {
+                case IdentifierToken identifierToken:
+                    segment.set(ValueLayout.ADDRESS, value1, call.serializeString(identifierToken.value));
+                    segment.set(ValueLayout.JAVA_LONG, value3, identifierToken.contextualKeyword != null ? tokenKind(identifierToken.contextualKeyword) : 0);
+                    break;
+                case BadToken _, IndentationToken _, KeywordToken _, SymbolToken _:
+                    break;
+                case BooleanLiteralToken literalToken:
+                    segment.set(ValueLayout.JAVA_INT, type, literalToken.type.ordinal());
+                    segment.set(ValueLayout.JAVA_LONG, value2, literalToken.value ? 1 : 0);
+                    break;
+                case IntegerLiteralToken literalToken:
+                    segment.set(ValueLayout.JAVA_INT, type, literalToken.type.ordinal());
+                    segment.set(ValueLayout.JAVA_LONG, value2, literalToken.value);
+                    segment.set(ValueLayout.JAVA_LONG, value3, literalToken.hasTypeSuffix ? 1 : 0);
+                    break;
+                case RuneLiteralToken literalToken:
+                    segment.set(ValueLayout.JAVA_INT, type, literalToken.type.ordinal());
+                    segment.set(ValueLayout.JAVA_LONG, value3, literalToken.value);
+                    break;
+                case StringLiteralToken literalToken:
+                    segment.set(ValueLayout.JAVA_INT, type, literalToken.type.ordinal());
+                    segment.set(ValueLayout.ADDRESS, value1, call.serializeString(literalToken.value));
+                    break;
+            }
+        }
+    }
+
+    private static final class IterableObjectDescriptor extends ObjectDescriptor<Iterable<Object>> {
+        final long size = ValueLayout.JAVA_INT.scale(0, 0);
+        final long data = ValueLayout.JAVA_INT.scale(0, 2);
+
+        public IterableObjectDescriptor() {
+            super(
+                    MemoryLayout.structLayout(
+                            ValueLayout.JAVA_INT, // size
+                            ValueLayout.JAVA_INT, // padding
+                            ValueLayout.ADDRESS   // data
+                    )
+            );
+        }
+
+        @Override
+        public void serialize(Iterable<Object> items, MemorySegment segment, LibraryCall call) {
+            final var handles = new ArrayList<Long>(items instanceof Collection<?> collection ? collection.size() : 10);
+            for (var item : items) {
+                handles.add(toObjectHandle(item));
+            }
+
+            segment.set(ValueLayout.JAVA_INT, size, handles.size());
+            segment.set(ValueLayout.ADDRESS, data, call.serializeObjectHandles(handles));
+        }
+    }
+
+    private static final class LexerObjectDescriptor extends ObjectDescriptor<Lexer> {
+        final long impl = JVM_HANDLE_LAYOUT.scale(0, 0);
+        final long lex = JVM_HANDLE_LAYOUT.scale(0, 1);
+
+        public LexerObjectDescriptor() {
+            super(
+                    MemoryLayout.structLayout(
+                            JVM_HANDLE_LAYOUT,   // impl
+                            VMT_STUB_LAYOUT  // lex
+                    )
+            );
+        }
+
+        @Override
+        public void serialize(Lexer lexer, MemorySegment segment, LibraryCall call) {
+            segment.set(JVM_HANDLE_LAYOUT, impl, toObjectHandle(lexer));
+            segment.set(VMT_STUB_LAYOUT, lex, lexImpl());
+        }
+    }
+
+    private static final class ParserObjectDescriptor extends ObjectDescriptor<Parser> {
+        final long impl = JVM_HANDLE_LAYOUT.scale(0, 0);
+        final long parse = JVM_HANDLE_LAYOUT.scale(0, 1);
+
+        public ParserObjectDescriptor() {
+            super(
+                    MemoryLayout.structLayout(
+                            JVM_HANDLE_LAYOUT,   // impl
+                            VMT_STUB_LAYOUT  // parse
+                    )
+            );
+        }
+
+        @Override
+        public void serialize(Parser parser, MemorySegment segment, LibraryCall call) {
+            segment.set(JVM_HANDLE_LAYOUT, impl, toObjectHandle(parser));
+            segment.set(VMT_STUB_LAYOUT, parse, parseImpl());
+        }
+    }
+
+    private static final class ParseResultObjectDescriptor extends ObjectDescriptor<ParseResult> {
+        final long root = JVM_HANDLE_LAYOUT.scale(0, 0);
+        final long invalidRanges = JVM_HANDLE_LAYOUT.scale(0, 1);
+        final long diagnostics = JVM_HANDLE_LAYOUT.scale(0, 2);
+
+        public ParseResultObjectDescriptor() {
+            super(
+                    MemoryLayout.structLayout(
+                            JVM_HANDLE_LAYOUT, // root
+                            JVM_HANDLE_LAYOUT, // invalidRanges
+                            JVM_HANDLE_LAYOUT  // diagnostics
+                    )
+            );
+        }
+
+        @Override
+        public void serialize(ParseResult result, MemorySegment segment, LibraryCall call) {
+            segment.set(JVM_HANDLE_LAYOUT, root, toObjectHandle(result.root()));
+            segment.set(JVM_HANDLE_LAYOUT, invalidRanges, toObjectHandle(result.invalidRanges()));
+            segment.set(JVM_HANDLE_LAYOUT, diagnostics, toObjectHandle(result.diagnostics()));
+        }
+    }
+
+    private static final class SyntaxNodeObjectDescriptor extends ObjectDescriptor<SyntaxNode> {
+        final long kind = ValueLayout.JAVA_INT.scale(0, 0);
+        final long position = ValueLayout.JAVA_INT.scale(0, 1);
+        final long fullLength = ValueLayout.JAVA_INT.scale(0, 2);
+        final long leadingTriviaLength = ValueLayout.JAVA_INT.scale(0, 3);
+        final long trailingTriviaLength = ValueLayout.JAVA_INT.scale(0, 4);
+        final long slotCount = ValueLayout.JAVA_INT.scale(0, 5);
+        final long token = ValueLayout.JAVA_INT.scale(0, 6);
+        final long slots = token + JVM_HANDLE_LAYOUT.scale(0, 1);
+
+        public SyntaxNodeObjectDescriptor() {
+            super(
+                    MemoryLayout.structLayout(
+                            ValueLayout.JAVA_INT,  // kind
+                            ValueLayout.JAVA_INT,  // position
+                            ValueLayout.JAVA_INT,  // fullLength
+                            ValueLayout.JAVA_INT,  // leadingTriviaLength
+                            ValueLayout.JAVA_INT,  // trailingTriviaLength
+                            ValueLayout.JAVA_INT,  // slotCount
+                            JVM_HANDLE_LAYOUT,     // token
+                            JVM_HANDLE_LAYOUT      // slots
+                    )
+            );
+        }
+
+        @Override
+        public void serialize(SyntaxNode node, MemorySegment segment, LibraryCall call) {
+            final var nodeSlotCount = node.slotCount();
+            final List<SyntaxNode> nodeSlots;
+            if (nodeSlotCount == 0) {
+                nodeSlots = List.of();
+            } else {
+                nodeSlots = Arrays.asList(new SyntaxNode[nodeSlotCount]);
+                for (var i = 0; i < nodeSlotCount; i++) {
+                    nodeSlots.set(i, node.slot(i));
+                }
+            }
+
+            segment.set(ValueLayout.JAVA_INT, kind, syntaxKind(node.kind()));
+            segment.set(ValueLayout.JAVA_INT, position, node.position());
+            segment.set(ValueLayout.JAVA_INT, fullLength, node.fullLength());
+            segment.set(ValueLayout.JAVA_INT, leadingTriviaLength, node.leadingTriviaLength());
+            segment.set(ValueLayout.JAVA_INT, trailingTriviaLength, node.trailingTriviaLength());
+            segment.set(ValueLayout.JAVA_INT, slotCount, nodeSlotCount);
+            segment.set(JVM_HANDLE_LAYOUT, token, toObjectHandle(node.token()));
+            segment.set(JVM_HANDLE_LAYOUT, slots, toObjectHandle(nodeSlots));
+        }
+    }
+
+    private static final class TextSpanObjectDescriptor extends ObjectDescriptor<TextSpan> {
+        final long start = ValueLayout.JAVA_INT.scale(0, 0);
+        final long length = ValueLayout.JAVA_INT.scale(0, 1);
+
+        public TextSpanObjectDescriptor() {
+            super(
+                    MemoryLayout.structLayout(
+                            ValueLayout.JAVA_INT,  // start
+                            ValueLayout.JAVA_INT   // length
+                    )
+            );
+        }
+
+        @Override
+        public void serialize(TextSpan span, MemorySegment segment, LibraryCall call) {
+            segment.set(ValueLayout.JAVA_INT, start, span.start);
+            segment.set(ValueLayout.JAVA_INT, length, span.length);
+        }
+    }
+
+    private static final class DiagnosticObjectDescriptor extends ObjectDescriptor<Diagnostic> {
+        final long errorCode = JVM_HANDLE_LAYOUT.scale(0, 0);
+        final long arguments = JVM_HANDLE_LAYOUT.scale(0, 1);
+        final long location = JVM_HANDLE_LAYOUT.scale(0, 2);
+        final long hints = JVM_HANDLE_LAYOUT.scale(0, 3);
+
+        public DiagnosticObjectDescriptor() {
+            super(
+                    MemoryLayout.structLayout(
+                            JVM_HANDLE_LAYOUT,  // errorCode
+                            JVM_HANDLE_LAYOUT,  // arguments
+                            JVM_HANDLE_LAYOUT,  // location
+                            JVM_HANDLE_LAYOUT   // hints
+                    )
+            );
+        }
+
+        @Override
+        public void serialize(Diagnostic diagnostic, MemorySegment segment, LibraryCall call) {
+            final var argumentsArray = diagnostic.arguments();
+            final var diagnosticArguments = new DiagnosticArgument[argumentsArray.length];
+            for (var i = 0; i < argumentsArray.length; i++) {
+                diagnosticArguments[i] = new DiagnosticArgument(argumentsArray[i]);
+            }
+            segment.set(JVM_HANDLE_LAYOUT, errorCode, toObjectHandle(diagnostic.errorCode()));
+            segment.set(JVM_HANDLE_LAYOUT, arguments, toObjectHandle(diagnosticArguments));
+            segment.set(JVM_HANDLE_LAYOUT, location, toObjectHandle(diagnostic.location()));
+            segment.set(JVM_HANDLE_LAYOUT, hints, toObjectHandle(diagnostic.hints()));
+        }
+    }
+
+    private static final class ErrorCodeObjectDescriptor extends ObjectDescriptor<ErrorCode> {
+        final long name = ValueLayout.ADDRESS.scale(0, 0);
+
+        public ErrorCodeObjectDescriptor() {
+            super(
+                    MemoryLayout.structLayout(
+                            ValueLayout.ADDRESS  // name
+                    )
+            );
+        }
+
+        @Override
+        public void serialize(ErrorCode errorCode, MemorySegment segment, LibraryCall call) {
+            segment.set(ValueLayout.ADDRESS, name, call.serializeString(errorCode.name()));
+        }
+    }
+
+    private static final class DiagnosticArgumentObjectDescriptor extends ObjectDescriptor<DiagnosticArgument> {
+        final long stringValue = ValueLayout.ADDRESS.scale(0, 0);
+        final long nodeValue = ValueLayout.ADDRESS.scale(0, 1);
+
+        public DiagnosticArgumentObjectDescriptor() {
+            super(
+                    MemoryLayout.structLayout(
+                            ValueLayout.ADDRESS,  // stringValue
+                            JVM_HANDLE_LAYOUT     // nodeValue
+                    )
+            );
+        }
+
+        @Override
+        public void serialize(DiagnosticArgument argument, MemorySegment segment, LibraryCall call) {
+            final var object = argument.object;
+            segment.set(ValueLayout.ADDRESS, stringValue, call.serializeString(Objects.toString(object)));
+            segment.set(JVM_HANDLE_LAYOUT, nodeValue, toObjectHandle(object instanceof SyntaxNode ? object : null));
+        }
+    }
+
+    private static final class DiagnosticArgument {
+        final Object object;
+
+        DiagnosticArgument(Object object) {
+            this.object = object;
         }
     }
 }

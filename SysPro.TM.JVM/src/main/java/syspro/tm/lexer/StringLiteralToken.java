@@ -45,6 +45,6 @@ public final class StringLiteralToken extends LiteralToken {
 
     @Override
     public SyntaxKind toSyntaxKind() {
-        return SyntaxKind.String;
+        return SyntaxKind.STRING;
     }
 }

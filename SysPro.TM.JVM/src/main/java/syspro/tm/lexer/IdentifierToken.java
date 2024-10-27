@@ -52,6 +52,6 @@ public final class IdentifierToken extends Token {
 
     @Override
     public SyntaxKind toSyntaxKind() {
-        return SyntaxKind.Identifier;
+        return SyntaxKind.IDENTIFIER;
     }
 }

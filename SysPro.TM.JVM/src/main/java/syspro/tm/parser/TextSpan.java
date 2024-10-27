@@ -2,6 +2,9 @@ package syspro.tm.parser;
 
 import java.util.Objects;
 
+/**
+ * Source text interval, with inclusive start and exclusive end positions.
+ */
 public final class TextSpan implements Comparable<TextSpan> {
     public final int start;
     public final int length;

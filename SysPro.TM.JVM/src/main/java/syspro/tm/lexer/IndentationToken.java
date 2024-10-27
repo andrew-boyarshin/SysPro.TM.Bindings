@@ -59,6 +59,6 @@ public final class IndentationToken extends Token {
 
     @Override
     public SyntaxKind toSyntaxKind() {
-        return isIndent() ? SyntaxKind.Indent : SyntaxKind.Dedent;
+        return isIndent() ? SyntaxKind.INDENT : SyntaxKind.DEDENT;
     }
 }

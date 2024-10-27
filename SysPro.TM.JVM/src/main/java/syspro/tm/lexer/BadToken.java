@@ -35,6 +35,6 @@ public final class BadToken extends Token {
 
     @Override
     public SyntaxKind toSyntaxKind() {
-        return SyntaxKind.Bad;
+        return SyntaxKind.BAD;
     }
 }

@@ -42,6 +42,6 @@ public final class BooleanLiteralToken extends LiteralToken {
 
     @Override
     public SyntaxKind toSyntaxKind() {
-        return SyntaxKind.Boolean;
+        return SyntaxKind.BOOLEAN;
     }
 }

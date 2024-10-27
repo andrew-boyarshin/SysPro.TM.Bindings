@@ -2,6 +2,8 @@ package syspro.tm.lexer;
 
 import syspro.tm.parser.SyntaxKind;
 
+import java.util.Locale;
+
 public final class RuneLiteralToken extends LiteralToken {
 
     /**
@@ -11,7 +13,7 @@ public final class RuneLiteralToken extends LiteralToken {
 
     public RuneLiteralToken(int start, int end, int leadingTriviaLength, int trailingTriviaLength, int value) {
         super(start, end, leadingTriviaLength, trailingTriviaLength, BuiltInType.RUNE);
-        assert Character.isValidCodePoint(value) : value;
+        assert Character.isValidCodePoint(value) : "U+" + Integer.toHexString(value).toUpperCase(Locale.ROOT) + " is invalid";
         this.value = value;
     }
 
@@ -50,6 +52,6 @@ public final class RuneLiteralToken extends LiteralToken {
 
     @Override
     public SyntaxKind toSyntaxKind() {
-        return SyntaxKind.Rune;
+        return SyntaxKind.RUNE;
     }
 }

@@ -70,6 +70,6 @@ public final class IntegerLiteralToken extends LiteralToken {
 
     @Override
     public SyntaxKind toSyntaxKind() {
-        return SyntaxKind.Integer;
+        return SyntaxKind.INTEGER;
     }
 }

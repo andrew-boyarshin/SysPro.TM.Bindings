@@ -1,5 +1,7 @@
 package syspro.tm.parser;
 
+import syspro.tm.lexer.Token;
+
 public interface SyntaxNode {
 
     /**
@@ -7,79 +9,124 @@ public interface SyntaxNode {
      */
     AnySyntaxKind kind();
 
-    int position();
+    /**
+     * Start position of {@link SyntaxNode#fullSpan()}.
+     */
+    default int position() {
+        return firstTerminal().token().start;
+    }
 
+    /**
+     * Syntax node source text interval, excluding trivia.
+     * @see SyntaxNode#fullSpan()
+     */
     default TextSpan span() {
         var start = position();
-        var width = fullWidth();
+        var length = fullLength();
 
-        var leadingTriviaWidth = leadingTriviaWidth();
+        var leadingTriviaWidth = leadingTriviaLength();
         start += leadingTriviaWidth;
-        width -= leadingTriviaWidth;
+        length -= leadingTriviaWidth;
 
-        width -= trailingTriviaWidth();
+        length -= trailingTriviaLength();
 
-        assert width >= 0;
-        return new TextSpan(start, width);
+        assert length >= 0;
+        return new TextSpan(start, length);
     }
 
+    /**
+     * Syntax node source text interval, including trivia.
+     * @see SyntaxNode#span()
+     */
     default TextSpan fullSpan() {
-        return new TextSpan(position(), fullWidth());
+        final var firstTerminal = firstTerminal().token();
+        final var lastTerminal = lastTerminal().token();
+        final var fullLength = lastTerminal.end - firstTerminal.start + 1;
+        return new TextSpan(firstTerminal.start, fullLength);
     }
 
-    int fullWidth();
-
-    default int width() {
-        return fullWidth() - this.leadingTriviaWidth() - this.trailingTriviaWidth();
+    /**
+     * @see SyntaxNode#length()
+     */
+    default int fullLength() {
+        final var firstTerminal = firstTerminal().token();
+        final var lastTerminal = lastTerminal().token();
+        return lastTerminal.end - firstTerminal.start + 1;
     }
 
-    default int leadingTriviaWidth() {
-        return this.fullWidth() != 0 ? this.firstTerminal().leadingTriviaWidth() : 0;
+    /**
+     * @see SyntaxNode#fullLength()
+     */
+    default int length() {
+        final var firstTerminal = firstTerminal().token();
+        final var lastTerminal = lastTerminal().token();
+        final var fullLength = lastTerminal.end - firstTerminal.start + 1;
+        return fullLength - firstTerminal.leadingTriviaLength - lastTerminal.trailingTriviaLength;
     }
 
-    default int trailingTriviaWidth() {
-        return this.fullWidth() != 0 ? this.lastTerminal().trailingTriviaWidth() : 0;
+    default int leadingTriviaLength() {
+        final var firstTerminal = firstTerminal().token();
+        return firstTerminal.leadingTriviaLength;
     }
 
+    default int trailingTriviaLength() {
+        final var lastTerminal = lastTerminal().token();
+        return lastTerminal.trailingTriviaLength;
+    }
+
+    /**
+     * Number of slots defined for this {@link SyntaxNode#kind()}.
+     */
     int slotCount();
 
+    /**
+     * Get slot for a direct syntax tree child, with slot index
+     * in the range from {@code 0} (inclusive) to {@link SyntaxNode#slotCount()} (exclusive).
+     */
     SyntaxNode slot(int index);
 
-    default SyntaxNode firstTerminal() {
-        SyntaxNode node = this;
+    default boolean isTerminal() {
+        return token() != null;
+    }
 
-        do {
-            SyntaxNode firstChild = null;
-            for (int i = 0, n = node.slotCount(); i < n; i++) {
-                var child = node.slot(i);
-                if (child != null) {
-                    firstChild = child;
-                    break;
+    /**
+     * Valid only when {@link SyntaxNode#isTerminal()} is {@code true}.
+     */
+    Token token();
+
+    default SyntaxNode firstTerminal() {
+        if (isTerminal()) {
+            return this;
+        }
+
+        for (int i = 0, n = slotCount(); i < n; i++) {
+            var child = slot(i);
+            if (child != null) {
+                final var firstTerminal = child.firstTerminal();
+                if (firstTerminal != null) {
+                    return firstTerminal;
                 }
             }
-            node = firstChild;
         }
-        while (node != null && node.slotCount() > 0);
 
-        return node;
+        return null;
     }
 
     default SyntaxNode lastTerminal() {
-        SyntaxNode node = this;
+        if (isTerminal()) {
+            return this;
+        }
 
-        do {
-            SyntaxNode lastChild = null;
-            for (int i = node.slotCount() - 1; i >= 0; i--) {
-                var child = node.slot(i);
-                if (child != null) {
-                    lastChild = child;
-                    break;
+        for (int i = slotCount() - 1; i >= 0; i--) {
+            var child = slot(i);
+            if (child != null) {
+                final var lastTerminal = child.lastTerminal();
+                if (lastTerminal != null) {
+                    return lastTerminal;
                 }
             }
-            node = lastChild;
         }
-        while (node != null && node.slotCount() > 0);
 
-        return node;
+        return null;
     }
 }
