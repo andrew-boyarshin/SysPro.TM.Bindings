@@ -1,7 +1,7 @@
 package syspro.tm.lexer;
 
 public final class TestMode {
-    private boolean repeated, shuffled, parallel;
+    private boolean repeated, shuffled, parallel, strict;
     private TestLineTerminators lineTerminators = TestLineTerminators.Native;
 
     public TestMode repeated(boolean value) {
@@ -25,11 +25,17 @@ public final class TestMode {
         return this;
     }
 
+    public TestMode strict(boolean value) {
+        this.strict = value;
+        return this;
+    }
+
     public int toMask() {
         int result = 0;
         if (repeated) result |= 1 << 0;
         if (shuffled) result |= 1 << 1;
         if (parallel) result |= 1 << 2;
+        if (strict) result |= 1 << 5;
         switch (lineTerminators) {
             case CarriageReturnLineFeed:
                 result |= 1 << 3;

@@ -50,6 +50,10 @@ public final class Library {
     private static volatile MemorySegment lexImpl;
     private static volatile MethodHandle registerTask2Solution;
     private static volatile MemorySegment parseImpl;
+    private static volatile MethodHandle startWebServer;
+    private static volatile MethodHandle stopWebServer;
+    private static volatile MethodHandle waitForWebServerExit;
+    private static volatile MethodHandle waitForWebServerExitWithTimeout;
 
 
     static {
@@ -167,6 +171,54 @@ public final class Library {
         return parseImpl;
     }
 
+    private static MethodHandle startWebServer() {
+        final var handle = Library.startWebServer;
+        if (handle == null) {
+            return Library.startWebServer = linker.downcallHandle(
+                    findFunction("StartWebServer"),
+                    FunctionDescriptor.ofVoid(ValueLayout.JAVA_INT)
+            );
+        }
+
+        return handle;
+    }
+
+    private static MethodHandle stopWebServer0() {
+        final var handle = Library.stopWebServer;
+        if (handle == null) {
+            return Library.stopWebServer = linker.downcallHandle(
+                    findFunction("StopWebServer"),
+                    FunctionDescriptor.ofVoid()
+            );
+        }
+
+        return handle;
+    }
+
+    private static MethodHandle waitForWebServerExit0() {
+        final var handle = Library.waitForWebServerExit;
+        if (handle == null) {
+            return Library.waitForWebServerExit = linker.downcallHandle(
+                    findFunction("WaitForWebServerExit"),
+                    FunctionDescriptor.ofVoid()
+            );
+        }
+
+        return handle;
+    }
+
+    private static MethodHandle waitForWebServerExitWithTimeout() {
+        final var handle = Library.waitForWebServerExitWithTimeout;
+        if (handle == null) {
+            return Library.waitForWebServerExitWithTimeout = linker.downcallHandle(
+                    findFunction("WaitForWebServerExitWithTimeout"),
+                    FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG)
+            );
+        }
+
+        return handle;
+    }
+
     private static long toObjectHandle(Object object) {
         synchronized (objectHandles) {
             final var handle = objectHandles.get(object);
@@ -221,7 +273,7 @@ public final class Library {
         }
     }
 
-    public static void registerTask1Solution(Lexer impl, TestMode mode) {
+    static void registerTask1Solution(Lexer impl, TestMode mode) {
         try (final var arena = Arena.ofConfined()) {
             new LibraryCall(arena) {
 
@@ -250,7 +302,7 @@ public final class Library {
         }
     }
 
-    public static void registerTask2Solution(Parser impl) {
+    static void registerTask2Solution(Parser impl) {
         try (final var arena = Arena.ofConfined()) {
             new LibraryCall(arena) {
 
@@ -272,6 +324,62 @@ public final class Library {
         } catch (Throwable e) {
             fatalError(e);
             return toObjectHandle(null);
+        }
+    }
+
+    static void startWebServer(int port) {
+        try (final var arena = Arena.ofConfined()) {
+            new LibraryCall(arena) {
+
+                @Override
+                public void call() throws Throwable {
+                    startWebServer().invokeExact(port);
+                }
+            }.makeCall();
+        } finally {
+            exitOnFatalErrors();
+        }
+    }
+
+    static void stopWebServer() {
+        try (final var arena = Arena.ofConfined()) {
+            new LibraryCall(arena) {
+
+                @Override
+                public void call() throws Throwable {
+                    stopWebServer0().invokeExact();
+                }
+            }.makeCall();
+        } finally {
+            exitOnFatalErrors();
+        }
+    }
+
+    static void waitForWebServerExit() {
+        try (final var arena = Arena.ofConfined()) {
+            new LibraryCall(arena) {
+
+                @Override
+                public void call() throws Throwable {
+                    waitForWebServerExit0().invokeExact();
+                }
+            }.makeCall();
+        } finally {
+            exitOnFatalErrors();
+        }
+    }
+
+    static void waitForWebServerExitWithTimeout(long timeoutMillis) {
+        try (final var arena = Arena.ofConfined()) {
+            new LibraryCall(arena) {
+
+                @Override
+                public void call() throws Throwable {
+                    waitForWebServerExitWithTimeout().invokeExact(timeoutMillis);
+                }
+            }.makeCall();
+        } finally {
+            exitOnFatalErrors();
         }
     }
 
