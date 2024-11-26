@@ -30,4 +30,14 @@ public final class Tasks {
             Library.registerTask2Solution(impl);
         }
     }
+
+    public static final class LanguageServer {
+
+        private LanguageServer() {
+        }
+
+        public static void registerSolution(syspro.tm.symbols.LanguageServer impl) {
+            Library.registerTask3Solution(impl);
+        }
+    }
 }

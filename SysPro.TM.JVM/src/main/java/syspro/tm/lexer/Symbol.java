@@ -40,4 +40,9 @@ public enum Symbol implements AnySyntaxKind {
     Symbol(String text) {
         this.text = text;
     }
+
+    @Override
+    public boolean isTerminal() {
+        return true;
+    }
 }

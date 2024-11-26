@@ -78,4 +78,52 @@ public enum SyntaxKind implements AnySyntaxKind {
     IDENTIFIER_NAME_EXPRESSION, // IDENTIFIER
     OPTION_NAME_EXPRESSION, // QUESTION NameExpression
     GENERIC_NAME_EXPRESSION, // IDENTIFIER LESS_THAN SEPARATED_LIST[NameExpression, COMMA] GREATER_THAN
+    ;
+
+    @Override
+    public boolean isTerminal() {
+        final var ordinal = this.ordinal();
+        return ordinal < SOURCE_TEXT.ordinal();
+    }
+
+    @Override
+    public boolean isNonTerminal() {
+        final var ordinal = this.ordinal();
+        return ordinal >= SOURCE_TEXT.ordinal();
+    }
+
+    @Override
+    public boolean isDefinition() {
+        final var ordinal = this.ordinal();
+        return ordinal >= TYPE_DEFINITION.ordinal() && ordinal <= PARAMETER_DEFINITION.ordinal();
+    }
+
+    @Override
+    public boolean isMemberDefinition() {
+        return this == FUNCTION_DEFINITION || this == VARIABLE_DEFINITION;
+    }
+
+    @Override
+    public boolean isStatement() {
+        final var ordinal = this.ordinal();
+        return ordinal >= VARIABLE_DEFINITION_STATEMENT.ordinal() && ordinal <= FOR_STATEMENT.ordinal();
+    }
+
+    @Override
+    public boolean isExpression() {
+        final var ordinal = this.ordinal();
+        return ordinal >= LOGICAL_AND_EXPRESSION.ordinal();
+    }
+
+    @Override
+    public boolean isPrimaryExpression() {
+        final var ordinal = this.ordinal();
+        return ordinal >= MEMBER_ACCESS_EXPRESSION.ordinal();
+    }
+
+    @Override
+    public boolean isNameExpression() {
+        final var ordinal = this.ordinal();
+        return ordinal >= IDENTIFIER_NAME_EXPRESSION.ordinal();
+    }
 }

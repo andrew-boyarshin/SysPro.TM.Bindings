@@ -23,14 +23,24 @@ public interface SyntaxNode {
      * @see SyntaxNode#fullSpan()
      */
     default TextSpan span() {
-        var start = position();
-        var length = fullLength();
+        final var firstTerminal = firstTerminal();
+        final var lastTerminal = lastTerminal();
+        if (firstTerminal == null || lastTerminal == null) {
+            return null;
+        }
 
-        var leadingTriviaWidth = leadingTriviaLength();
+        final var firstToken = firstTerminal.token();
+        final var lastToken = lastTerminal.token();
+        assert firstToken != null && lastToken != null;
+
+        var start = firstToken.start;
+        var length = lastToken.end - firstToken.start + 1;
+
+        var leadingTriviaWidth = firstToken.leadingTriviaLength;
         start += leadingTriviaWidth;
         length -= leadingTriviaWidth;
 
-        length -= trailingTriviaLength();
+        length -= lastToken.trailingTriviaLength;
 
         assert length >= 0;
         return new TextSpan(start, length);
@@ -41,10 +51,18 @@ public interface SyntaxNode {
      * @see SyntaxNode#span()
      */
     default TextSpan fullSpan() {
-        final var firstTerminal = firstTerminal().token();
-        final var lastTerminal = lastTerminal().token();
-        final var fullLength = lastTerminal.end - firstTerminal.start + 1;
-        return new TextSpan(firstTerminal.start, fullLength);
+        final var firstTerminal = firstTerminal();
+        final var lastTerminal = lastTerminal();
+        if (firstTerminal == null || lastTerminal == null) {
+            return null;
+        }
+
+        final var firstToken = firstTerminal.token();
+        final var lastToken = lastTerminal.token();
+        assert firstToken != null && lastToken != null;
+
+        final var fullLength = lastToken.end - firstToken.start + 1;
+        return new TextSpan(firstToken.start, fullLength);
     }
 
     /**

@@ -40,4 +40,9 @@ public enum Keyword implements AnySyntaxKind {
         this.text = name().toLowerCase(Locale.ROOT);
         this.isContextual = isContextual;
     }
+
+    @Override
+    public boolean isTerminal() {
+        return true;
+    }
 }

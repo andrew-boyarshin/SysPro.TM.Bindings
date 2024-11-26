@@ -2,6 +2,7 @@ package syspro.tm;
 
 import syspro.tm.lexer.*;
 import syspro.tm.parser.*;
+import syspro.tm.symbols.*;
 
 import java.io.IOException;
 import java.lang.foreign.*;
@@ -41,15 +42,17 @@ public final class Library {
             new TextSpanObjectDescriptor(),
             new DiagnosticObjectDescriptor(),
             new ErrorCodeObjectDescriptor(),
-            new DiagnosticArgumentObjectDescriptor()
+            new DiagnosticArgumentObjectDescriptor(),
+            new LanguageServerObjectDescriptor(),
+            new SemanticModelObjectDescriptor(),
+            new SemanticSymbolObjectDescriptor()
     );
     private static volatile boolean hasFatalFailures;
     private static volatile Path nativeLibraryLockFile;
     private static volatile MethodHandle registerObjectResult;
     private static volatile MethodHandle registerTask1Solution;
-    private static volatile MemorySegment lexImpl;
     private static volatile MethodHandle registerTask2Solution;
-    private static volatile MemorySegment parseImpl;
+    private static volatile MethodHandle registerTask3Solution;
     private static volatile MethodHandle startWebServer;
     private static volatile MethodHandle stopWebServer;
     private static volatile MethodHandle waitForWebServerExit;
@@ -79,10 +82,7 @@ public final class Library {
                                             MethodType.methodType(void.class, LIB_HANDLE_CLASS, int.class, int.class, ARRAY_CLASS)
                                     ),
                                     FunctionDescriptor.ofVoid(
-                                            LIB_HANDLE_LAYOUT,
-                                            ValueLayout.JAVA_INT,
-                                            ValueLayout.JAVA_INT,
-                                            ARRAY_LAYOUT
+                                            LIB_HANDLE_LAYOUT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ARRAY_LAYOUT
                                     ),
                                     Library.arena
                             )
@@ -119,26 +119,6 @@ public final class Library {
         return handle;
     }
 
-    private static MemorySegment lexImpl() {
-        final var lexImpl = Library.lexImpl;
-        if (lexImpl == null) {
-            try {
-                return Library.lexImpl = linker.upcallStub(
-                        MethodHandles.lookup().findStatic(
-                                Library.class, "lexImpl",
-                                MethodType.methodType(JVM_HANDLE_CLASS, JVM_HANDLE_CLASS, STRING_CLASS)
-                        ),
-                        FunctionDescriptor.of(JVM_HANDLE_LAYOUT, JVM_HANDLE_LAYOUT, STRING_LAYOUT),
-                        arena
-                );
-            } catch (NoSuchMethodException | IllegalAccessException e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        return lexImpl;
-    }
-
     private static MethodHandle registerTask2Solution() {
         final var handle = Library.registerTask2Solution;
         if (handle == null) {
@@ -151,24 +131,16 @@ public final class Library {
         return handle;
     }
 
-    private static MemorySegment parseImpl() {
-        final var parseImpl = Library.parseImpl;
-        if (parseImpl == null) {
-            try {
-                return Library.parseImpl = linker.upcallStub(
-                        MethodHandles.lookup().findStatic(
-                                Library.class, "parseImpl",
-                                MethodType.methodType(JVM_HANDLE_CLASS, JVM_HANDLE_CLASS, STRING_CLASS)
-                        ),
-                        FunctionDescriptor.of(JVM_HANDLE_LAYOUT, JVM_HANDLE_LAYOUT, STRING_LAYOUT),
-                        arena
-                );
-            } catch (NoSuchMethodException | IllegalAccessException e) {
-                throw new RuntimeException(e);
-            }
+    private static MethodHandle registerTask3Solution() {
+        final var handle = Library.registerTask3Solution;
+        if (handle == null) {
+            return Library.registerTask3Solution = linker.downcallHandle(
+                    findFunction("RegisterTask3Solution"),
+                    FunctionDescriptor.ofVoid(JVM_HANDLE_LAYOUT)
+            );
         }
 
-        return parseImpl;
+        return handle;
     }
 
     private static MethodHandle startWebServer() {
@@ -246,14 +218,10 @@ public final class Library {
 
     @SuppressWarnings("unchecked")
     private static void registerObjectImpl(long request, int kind, int count, MemorySegment handleArraySegment) {
-        handleArraySegment = handleArraySegment.reinterpret(count * JVM_HANDLE_LAYOUT.byteSize());
+        final var list = Arrays.asList(readHandleArray(count, handleArraySegment));
+
         final var desc = (ObjectDescriptor<Object>) layouts.get(kind);
         try (final var arena = Arena.ofConfined()) {
-            final var list = new ArrayList<>(count);
-            for (int i = 0; i < count; i++) {
-                list.add(fromObjectHandle(handleArraySegment.getAtIndex(JVM_HANDLE_LAYOUT, i)));
-            }
-
             new LibraryCall(arena) {
 
                 @Override
@@ -271,6 +239,17 @@ public final class Library {
                 }
             }.makeCall();
         }
+    }
+
+    private static <T> T[] readHandleArray(int count, MemorySegment handleArraySegment) {
+        handleArraySegment = handleArraySegment.reinterpret(count * JVM_HANDLE_LAYOUT.byteSize());
+
+        final var array = (T[]) new Object[count];
+        for (int i = 0; i < count; i++) {
+            array[i] = fromObjectHandle(handleArraySegment.getAtIndex(JVM_HANDLE_LAYOUT, i));
+        }
+
+        return array;
     }
 
     static void registerTask1Solution(Lexer impl, TestMode mode) {
@@ -291,17 +270,6 @@ public final class Library {
         return lookup.find(name).orElseThrow(() -> new RuntimeException('`' + name + "` was not found in SysPro.TM.Library, faulty build? Ask the teacher."));
     }
 
-    private static long lexImpl(long impl, MemorySegment codeSegment) {
-        try {
-            final Lexer lexer = fromObjectHandle(impl);
-            final var code = codeSegment.reinterpret(Integer.MAX_VALUE).getString(0);
-            return toObjectHandle(List.copyOf(lexer.lex(code)));
-        } catch (Throwable e) {
-            fatalError(e);
-            return toObjectHandle(null);
-        }
-    }
-
     static void registerTask2Solution(Parser impl) {
         try (final var arena = Arena.ofConfined()) {
             new LibraryCall(arena) {
@@ -316,14 +284,17 @@ public final class Library {
         }
     }
 
-    private static long parseImpl(long impl, MemorySegment codeSegment) {
-        try {
-            final Parser parser = fromObjectHandle(impl);
-            final var code = codeSegment.reinterpret(Integer.MAX_VALUE).getString(0);
-            return toObjectHandle(parser.parse(code));
-        } catch (Throwable e) {
-            fatalError(e);
-            return toObjectHandle(null);
+    static void registerTask3Solution(LanguageServer impl) {
+        try (final var arena = Arena.ofConfined()) {
+            new LibraryCall(arena) {
+
+                @Override
+                public void call() throws Throwable {
+                    registerTask3Solution().invokeExact(toObjectHandle(impl));
+                }
+            }.makeCall();
+        } finally {
+            exitOnFatalErrors();
         }
     }
 
@@ -430,8 +401,12 @@ public final class Library {
             case Keyword keyword -> tokenKind(keyword);
             case Symbol symbol -> tokenKind(symbol);
             case SyntaxKind nonTerminalKind -> tokenKind(nonTerminalKind);
-            default -> throw new IllegalStateException("Unexpected value: " + kind);
+            default -> throw new IllegalStateException("Unexpected value: " + kind + ". You can only return Keyword, Symbol or SyntaxKind from SyntaxNode.kind().");
         };
+    }
+
+    private static int symbolKind(SymbolKind kind) {
+        return kind.ordinal();
     }
 
     private static Path extractNativeLibrary() {
@@ -633,12 +608,127 @@ public final class Library {
 
     private static abstract class ObjectDescriptor<T> {
         private final MemoryLayout layout;
+        private final Class<T> type;
 
-        protected ObjectDescriptor(MemoryLayout layout) {
+        protected ObjectDescriptor(MemoryLayout layout, Class<T> type) {
             this.layout = layout;
+            this.type = type;
+        }
+
+        protected boolean supports(Class<?> type) {
+            return this.type.isAssignableFrom(type);
+        }
+
+        protected final long offset(String name) {
+            return layout.byteOffset(MemoryLayout.PathElement.groupElement(name));
+        }
+
+        protected final MemoryLayout layout(String name) {
+            return layout.select(MemoryLayout.PathElement.groupElement(name));
         }
 
         public abstract void serialize(T object, MemorySegment segment, LibraryCall call);
+    }
+
+    private static abstract class ModernObjectDescriptor<T> extends ObjectDescriptor<T> {
+        private final ThreadLocal<LibraryCall> call = ThreadLocal.withInitial(() -> null);
+        private final ThreadLocal<MemorySegment> segment = ThreadLocal.withInitial(() -> null);
+
+        protected ModernObjectDescriptor(MemoryLayout layout, Class<T> type) {
+            super(layout, type);
+        }
+
+        @Override
+        public final void serialize(T object, MemorySegment segment, LibraryCall call) {
+            final var oldCall = this.call.get();
+            final var oldSegment = this.segment.get();
+            try {
+                this.call.set(call);
+                this.segment.set(segment);
+                serialize(object);
+            } finally {
+                this.call.set(oldCall);
+                this.segment.set(oldSegment);
+            }
+        }
+
+        protected final void set(String name, boolean... flags) {
+            var result = 0;
+            var bit = 0;
+            assert flags.length > 0 && flags.length < 32 : flags.length;
+            for (final var flag : flags) {
+                if (flag) {
+                    result |= (1 << bit);
+                }
+                bit++;
+            }
+            set(name, result);
+        }
+
+        protected final void set(String name, int value) {
+            segment().set((ValueLayout.OfInt) layout(name), offset(name), value);
+        }
+
+        protected final void set(String name, long value) {
+            segment().set((ValueLayout.OfLong) layout(name), offset(name), value);
+        }
+
+        protected final void set(String name, String value) {
+            assert Objects.equals(layout(name).withoutName(), STRING_LAYOUT) : name + ": " + layout(name);
+            segment().set(STRING_LAYOUT, offset(name), call().serializeString(value));
+        }
+
+        protected final void set(String name, MemorySegment stub) {
+            assert Objects.equals(layout(name).withoutName(), VMT_STUB_LAYOUT) : name + ": " + layout(name);
+            segment().set(VMT_STUB_LAYOUT, offset(name), stub);
+        }
+
+        protected final void set(String name, Object value) {
+            final var offset = offset(name);
+            assert Objects.equals(layout(name).withoutName(), JVM_HANDLE_LAYOUT) : name + ": " + layout(name);
+
+            if (value == null) {
+                assert toObjectHandle(null) == 0;
+                segment().set(JVM_HANDLE_LAYOUT, offset, 0);
+                return;
+            }
+
+            if (value instanceof String || value instanceof MemorySegment) {
+                throw new RuntimeException("Wrong overload");
+            }
+
+            final var type = value.getClass();
+            for (final var descriptor : layouts) {
+                if (descriptor.supports(type)) {
+                    segment().set(JVM_HANDLE_LAYOUT, offset, toObjectHandle(value));
+                    return;
+                }
+            }
+
+            throw new RuntimeException("Unsupported type " + type);
+        }
+
+        protected final void setNull(String name) {
+            final var offset = offset(name);
+            assert Objects.equals(layout(name).withoutName(), JVM_HANDLE_LAYOUT) : name + ": " + layout(name);
+
+            assert toObjectHandle(null) == 0;
+            segment().set(JVM_HANDLE_LAYOUT, offset, 0);
+        }
+
+        private MemorySegment segment() {
+            final var result = this.segment.get();
+            if (result == null) throw new NullPointerException("Segment is null");
+            return result;
+        }
+
+        private LibraryCall call() {
+            final var result = this.call.get();
+            if (result == null) throw new NullPointerException("LibraryCall is null");
+            return result;
+        }
+
+        public abstract void serialize(T object);
     }
 
     private static abstract class LibraryCall {
@@ -726,7 +816,8 @@ public final class Library {
                             ValueLayout.ADDRESS,   // value1
                             ValueLayout.JAVA_LONG, // value2
                             ValueLayout.JAVA_LONG  // value3
-                    )
+                    ),
+                    Token.class
             );
         }
 
@@ -770,12 +861,14 @@ public final class Library {
         final long data = ValueLayout.JAVA_INT.scale(0, 2);
 
         public IterableObjectDescriptor() {
+            //noinspection unchecked
             super(
                     MemoryLayout.structLayout(
                             ValueLayout.JAVA_INT, // size
                             ValueLayout.JAVA_INT, // padding
                             ValueLayout.ADDRESS   // data
-                    )
+                    ),
+                    (Class<Iterable<Object>>) (Class) Iterable.class
             );
         }
 
@@ -791,96 +884,149 @@ public final class Library {
         }
     }
 
-    private static final class LexerObjectDescriptor extends ObjectDescriptor<Lexer> {
-        final long impl = JVM_HANDLE_LAYOUT.scale(0, 0);
-        final long lex = JVM_HANDLE_LAYOUT.scale(0, 1);
+    private static final class LexerObjectDescriptor extends ModernObjectDescriptor<Lexer> {
+        private static volatile MemorySegment lexImpl;
 
         public LexerObjectDescriptor() {
             super(
                     MemoryLayout.structLayout(
-                            JVM_HANDLE_LAYOUT,   // impl
-                            VMT_STUB_LAYOUT  // lex
-                    )
+                            JVM_HANDLE_LAYOUT.withName("impl"),
+                            VMT_STUB_LAYOUT.withName("lex")
+                    ),
+                    Lexer.class
             );
         }
 
+        private static MemorySegment lexImpl() {
+            final var stub = LexerObjectDescriptor.lexImpl;
+            if (stub == null) {
+                try {
+                    return LexerObjectDescriptor.lexImpl = linker.upcallStub(
+                            MethodHandles.lookup().findStatic(
+                                    LexerObjectDescriptor.class, "lexImpl",
+                                    MethodType.methodType(JVM_HANDLE_CLASS, JVM_HANDLE_CLASS, STRING_CLASS)
+                            ),
+                            FunctionDescriptor.of(JVM_HANDLE_LAYOUT, JVM_HANDLE_LAYOUT, STRING_LAYOUT),
+                            arena
+                    );
+                } catch (NoSuchMethodException | IllegalAccessException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+
+            return stub;
+        }
+
+        private static long lexImpl(long impl, MemorySegment codeSegment) {
+            try {
+                final Lexer lexer = fromObjectHandle(impl);
+                final var code = codeSegment.reinterpret(Integer.MAX_VALUE).getString(0);
+                return toObjectHandle(List.copyOf(lexer.lex(code)));
+            } catch (Throwable e) {
+                fatalError(e);
+                return toObjectHandle(null);
+            }
+        }
+
         @Override
-        public void serialize(Lexer lexer, MemorySegment segment, LibraryCall call) {
-            segment.set(JVM_HANDLE_LAYOUT, impl, toObjectHandle(lexer));
-            segment.set(VMT_STUB_LAYOUT, lex, lexImpl());
+        public void serialize(Lexer lexer) {
+            set("impl", lexer);
+            set("lex", lexImpl());
         }
     }
 
-    private static final class ParserObjectDescriptor extends ObjectDescriptor<Parser> {
-        final long impl = JVM_HANDLE_LAYOUT.scale(0, 0);
-        final long parse = JVM_HANDLE_LAYOUT.scale(0, 1);
+    private static final class ParserObjectDescriptor extends ModernObjectDescriptor<Parser> {
+        private static volatile MemorySegment parseImpl;
 
         public ParserObjectDescriptor() {
             super(
                     MemoryLayout.structLayout(
-                            JVM_HANDLE_LAYOUT,   // impl
-                            VMT_STUB_LAYOUT  // parse
-                    )
+                            JVM_HANDLE_LAYOUT.withName("impl"),
+                            VMT_STUB_LAYOUT.withName("parse")
+                    ),
+                    Parser.class
             );
         }
 
+        private static long parseImpl(long impl, MemorySegment codeSegment) {
+            try {
+                final Parser parser = fromObjectHandle(impl);
+                final var code = codeSegment.reinterpret(Integer.MAX_VALUE).getString(0);
+                return toObjectHandle(parser.parse(code));
+            } catch (Throwable e) {
+                fatalError(e);
+                return toObjectHandle(null);
+            }
+        }
+
+        private static MemorySegment parseImpl() {
+            final var stub = ParserObjectDescriptor.parseImpl;
+            if (stub == null) {
+                try {
+                    return ParserObjectDescriptor.parseImpl = linker.upcallStub(
+                            MethodHandles.lookup().findStatic(
+                                    ParserObjectDescriptor.class, "parseImpl",
+                                    MethodType.methodType(JVM_HANDLE_CLASS, JVM_HANDLE_CLASS, STRING_CLASS)
+                            ),
+                            FunctionDescriptor.of(JVM_HANDLE_LAYOUT, JVM_HANDLE_LAYOUT, STRING_LAYOUT),
+                            arena
+                    );
+                } catch (NoSuchMethodException | IllegalAccessException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+
+            return stub;
+        }
+
         @Override
-        public void serialize(Parser parser, MemorySegment segment, LibraryCall call) {
-            segment.set(JVM_HANDLE_LAYOUT, impl, toObjectHandle(parser));
-            segment.set(VMT_STUB_LAYOUT, parse, parseImpl());
+        public void serialize(Parser parser) {
+            set("impl", parser);
+            set("parse", parseImpl());
         }
     }
 
-    private static final class ParseResultObjectDescriptor extends ObjectDescriptor<ParseResult> {
-        final long root = JVM_HANDLE_LAYOUT.scale(0, 0);
-        final long invalidRanges = JVM_HANDLE_LAYOUT.scale(0, 1);
-        final long diagnostics = JVM_HANDLE_LAYOUT.scale(0, 2);
-
+    private static final class ParseResultObjectDescriptor extends ModernObjectDescriptor<ParseResult> {
         public ParseResultObjectDescriptor() {
             super(
                     MemoryLayout.structLayout(
-                            JVM_HANDLE_LAYOUT, // root
-                            JVM_HANDLE_LAYOUT, // invalidRanges
-                            JVM_HANDLE_LAYOUT  // diagnostics
-                    )
+                            JVM_HANDLE_LAYOUT.withName("root"),
+                            JVM_HANDLE_LAYOUT.withName("invalidRanges"),
+                            JVM_HANDLE_LAYOUT.withName("diagnostics")
+                    ),
+                    ParseResult.class
             );
         }
 
         @Override
-        public void serialize(ParseResult result, MemorySegment segment, LibraryCall call) {
-            segment.set(JVM_HANDLE_LAYOUT, root, toObjectHandle(result.root()));
-            segment.set(JVM_HANDLE_LAYOUT, invalidRanges, toObjectHandle(result.invalidRanges()));
-            segment.set(JVM_HANDLE_LAYOUT, diagnostics, toObjectHandle(result.diagnostics()));
+        public void serialize(ParseResult result) {
+            set("root", result.root());
+            set("invalidRanges", result.invalidRanges());
+            set("diagnostics", result.diagnostics());
         }
     }
 
-    private static final class SyntaxNodeObjectDescriptor extends ObjectDescriptor<SyntaxNode> {
-        final long kind = ValueLayout.JAVA_INT.scale(0, 0);
-        final long position = ValueLayout.JAVA_INT.scale(0, 1);
-        final long fullLength = ValueLayout.JAVA_INT.scale(0, 2);
-        final long leadingTriviaLength = ValueLayout.JAVA_INT.scale(0, 3);
-        final long trailingTriviaLength = ValueLayout.JAVA_INT.scale(0, 4);
-        final long slotCount = ValueLayout.JAVA_INT.scale(0, 5);
-        final long token = ValueLayout.JAVA_INT.scale(0, 6);
-        final long slots = token + JVM_HANDLE_LAYOUT.scale(0, 1);
-
+    private static final class SyntaxNodeObjectDescriptor extends ModernObjectDescriptor<SyntaxNode> {
         public SyntaxNodeObjectDescriptor() {
             super(
                     MemoryLayout.structLayout(
-                            ValueLayout.JAVA_INT,  // kind
-                            ValueLayout.JAVA_INT,  // position
-                            ValueLayout.JAVA_INT,  // fullLength
-                            ValueLayout.JAVA_INT,  // leadingTriviaLength
-                            ValueLayout.JAVA_INT,  // trailingTriviaLength
-                            ValueLayout.JAVA_INT,  // slotCount
-                            JVM_HANDLE_LAYOUT,     // token
-                            JVM_HANDLE_LAYOUT      // slots
-                    )
+                            ValueLayout.JAVA_INT.withName("kind"),
+                            ValueLayout.JAVA_INT.withName("position"),
+                            ValueLayout.JAVA_INT.withName("fullLength"),
+                            ValueLayout.JAVA_INT.withName("leadingTriviaLength"),
+                            ValueLayout.JAVA_INT.withName("trailingTriviaLength"),
+                            ValueLayout.JAVA_INT.withName("slotCount"),
+                            JVM_HANDLE_LAYOUT.withName("token"),
+                            JVM_HANDLE_LAYOUT.withName("slots"),
+                            JVM_HANDLE_LAYOUT.withName("type"),
+                            JVM_HANDLE_LAYOUT.withName("symbol")
+                    ),
+                    SyntaxNode.class
             );
         }
 
         @Override
-        public void serialize(SyntaxNode node, MemorySegment segment, LibraryCall call) {
+        public void serialize(SyntaxNode node) {
             final var nodeSlotCount = node.slotCount();
             final List<SyntaxNode> nodeSlots;
             if (nodeSlotCount == 0) {
@@ -892,103 +1038,130 @@ public final class Library {
                 }
             }
 
-            segment.set(ValueLayout.JAVA_INT, kind, syntaxKind(node.kind()));
-            segment.set(ValueLayout.JAVA_INT, position, node.position());
-            segment.set(ValueLayout.JAVA_INT, fullLength, node.fullLength());
-            segment.set(ValueLayout.JAVA_INT, leadingTriviaLength, node.leadingTriviaLength());
-            segment.set(ValueLayout.JAVA_INT, trailingTriviaLength, node.trailingTriviaLength());
-            segment.set(ValueLayout.JAVA_INT, slotCount, nodeSlotCount);
-            segment.set(JVM_HANDLE_LAYOUT, token, toObjectHandle(node.token()));
-            segment.set(JVM_HANDLE_LAYOUT, slots, toObjectHandle(nodeSlots));
+            set("kind", syntaxKind(node.kind()));
+            int position;
+            try {
+                position = node.position();
+            } catch (Throwable e) {
+                e.printStackTrace();
+                position = -1;
+            }
+            int fullLength;
+            try {
+                fullLength = node.fullLength();
+            } catch (Throwable e) {
+                e.printStackTrace();
+                fullLength = -1;
+            }
+            int leadingTriviaLength;
+            try {
+                leadingTriviaLength = node.leadingTriviaLength();
+            } catch (Throwable e) {
+                e.printStackTrace();
+                leadingTriviaLength = -1;
+            }
+            int trailingTriviaLength;
+            try {
+                trailingTriviaLength = node.trailingTriviaLength();
+            } catch (Throwable e) {
+                e.printStackTrace();
+                trailingTriviaLength = -1;
+            }
+            set("position", position);
+            set("fullLength", fullLength);
+            set("leadingTriviaLength", leadingTriviaLength);
+            set("trailingTriviaLength", trailingTriviaLength);
+            set("slotCount", nodeSlotCount);
+            set("token", node.token());
+            set("slots", nodeSlots);
+
+            if (node instanceof SyntaxNodeWithSymbols withSymbols) {
+                set("type", withSymbols.type());
+                set("symbol", withSymbols.symbol());
+            } else {
+                setNull("type");
+                setNull("symbol");
+            }
         }
     }
 
-    private static final class TextSpanObjectDescriptor extends ObjectDescriptor<TextSpan> {
-        final long start = ValueLayout.JAVA_INT.scale(0, 0);
-        final long length = ValueLayout.JAVA_INT.scale(0, 1);
-
+    private static final class TextSpanObjectDescriptor extends ModernObjectDescriptor<TextSpan> {
         public TextSpanObjectDescriptor() {
             super(
                     MemoryLayout.structLayout(
-                            ValueLayout.JAVA_INT,  // start
-                            ValueLayout.JAVA_INT   // length
-                    )
+                            ValueLayout.JAVA_INT.withName("start"),
+                            ValueLayout.JAVA_INT.withName("length")
+                    ),
+                    TextSpan.class
             );
         }
 
         @Override
-        public void serialize(TextSpan span, MemorySegment segment, LibraryCall call) {
-            segment.set(ValueLayout.JAVA_INT, start, span.start);
-            segment.set(ValueLayout.JAVA_INT, length, span.length);
+        public void serialize(TextSpan span) {
+            set("start", span.start);
+            set("length", span.length);
         }
     }
 
-    private static final class DiagnosticObjectDescriptor extends ObjectDescriptor<Diagnostic> {
-        final long errorCode = JVM_HANDLE_LAYOUT.scale(0, 0);
-        final long arguments = JVM_HANDLE_LAYOUT.scale(0, 1);
-        final long location = JVM_HANDLE_LAYOUT.scale(0, 2);
-        final long hints = JVM_HANDLE_LAYOUT.scale(0, 3);
-
+    private static final class DiagnosticObjectDescriptor extends ModernObjectDescriptor<Diagnostic> {
         public DiagnosticObjectDescriptor() {
             super(
                     MemoryLayout.structLayout(
-                            JVM_HANDLE_LAYOUT,  // errorCode
-                            JVM_HANDLE_LAYOUT,  // arguments
-                            JVM_HANDLE_LAYOUT,  // location
-                            JVM_HANDLE_LAYOUT   // hints
-                    )
+                            JVM_HANDLE_LAYOUT.withName("errorCode"),
+                            JVM_HANDLE_LAYOUT.withName("arguments"),
+                            JVM_HANDLE_LAYOUT.withName("location"),
+                            JVM_HANDLE_LAYOUT.withName("hints")
+                    ),
+                    Diagnostic.class
             );
         }
 
         @Override
-        public void serialize(Diagnostic diagnostic, MemorySegment segment, LibraryCall call) {
+        public void serialize(Diagnostic diagnostic) {
             final var argumentsArray = diagnostic.arguments();
             final var diagnosticArguments = new DiagnosticArgument[argumentsArray.length];
             for (var i = 0; i < argumentsArray.length; i++) {
                 diagnosticArguments[i] = new DiagnosticArgument(argumentsArray[i]);
             }
-            segment.set(JVM_HANDLE_LAYOUT, errorCode, toObjectHandle(diagnostic.errorCode()));
-            segment.set(JVM_HANDLE_LAYOUT, arguments, toObjectHandle(diagnosticArguments));
-            segment.set(JVM_HANDLE_LAYOUT, location, toObjectHandle(diagnostic.location()));
-            segment.set(JVM_HANDLE_LAYOUT, hints, toObjectHandle(diagnostic.hints()));
+            set("errorCode", diagnostic.errorCode());
+            set("arguments", Arrays.asList(diagnosticArguments));
+            set("location", diagnostic.location());
+            set("hints", diagnostic.hints());
         }
     }
 
-    private static final class ErrorCodeObjectDescriptor extends ObjectDescriptor<ErrorCode> {
-        final long name = ValueLayout.ADDRESS.scale(0, 0);
-
+    private static final class ErrorCodeObjectDescriptor extends ModernObjectDescriptor<ErrorCode> {
         public ErrorCodeObjectDescriptor() {
             super(
                     MemoryLayout.structLayout(
-                            ValueLayout.ADDRESS  // name
-                    )
+                            ValueLayout.ADDRESS.withName("name")
+                    ),
+                    ErrorCode.class
             );
         }
 
         @Override
-        public void serialize(ErrorCode errorCode, MemorySegment segment, LibraryCall call) {
-            segment.set(ValueLayout.ADDRESS, name, call.serializeString(errorCode.name()));
+        public void serialize(ErrorCode errorCode) {
+            set("name", errorCode.name());
         }
     }
 
-    private static final class DiagnosticArgumentObjectDescriptor extends ObjectDescriptor<DiagnosticArgument> {
-        final long stringValue = ValueLayout.ADDRESS.scale(0, 0);
-        final long nodeValue = ValueLayout.ADDRESS.scale(0, 1);
-
+    private static final class DiagnosticArgumentObjectDescriptor extends ModernObjectDescriptor<DiagnosticArgument> {
         public DiagnosticArgumentObjectDescriptor() {
             super(
                     MemoryLayout.structLayout(
-                            ValueLayout.ADDRESS,  // stringValue
-                            JVM_HANDLE_LAYOUT     // nodeValue
-                    )
+                            ValueLayout.ADDRESS.withName("stringValue"),
+                            JVM_HANDLE_LAYOUT.withName("nodeValue")
+                    ),
+                    DiagnosticArgument.class
             );
         }
 
         @Override
-        public void serialize(DiagnosticArgument argument, MemorySegment segment, LibraryCall call) {
+        public void serialize(DiagnosticArgument argument) {
             final var object = argument.object;
-            segment.set(ValueLayout.ADDRESS, stringValue, call.serializeString(Objects.toString(object)));
-            segment.set(JVM_HANDLE_LAYOUT, nodeValue, toObjectHandle(object instanceof SyntaxNode ? object : null));
+            set("stringValue", Objects.toString(object));
+            set("nodeValue", object instanceof SyntaxNode ? object : null);
         }
     }
 
@@ -997,6 +1170,208 @@ public final class Library {
 
         DiagnosticArgument(Object object) {
             this.object = object;
+        }
+    }
+
+    private static final class LanguageServerObjectDescriptor extends ModernObjectDescriptor<LanguageServer> {
+        private static volatile MemorySegment buildModelImpl;
+
+        public LanguageServerObjectDescriptor() {
+            super(
+                    MemoryLayout.structLayout(
+                            JVM_HANDLE_LAYOUT.withName("impl"),
+                            VMT_STUB_LAYOUT.withName("buildModel")
+                    ),
+                    LanguageServer.class
+            );
+        }
+
+        private static MemorySegment buildModelImpl() {
+            final var stub = LanguageServerObjectDescriptor.buildModelImpl;
+            if (stub == null) {
+                try {
+                    return LanguageServerObjectDescriptor.buildModelImpl = linker.upcallStub(
+                            MethodHandles.lookup().findStatic(
+                                    LanguageServerObjectDescriptor.class, "buildModelImpl",
+                                    MethodType.methodType(JVM_HANDLE_CLASS, JVM_HANDLE_CLASS, STRING_CLASS)
+                            ),
+                            FunctionDescriptor.of(JVM_HANDLE_LAYOUT, JVM_HANDLE_LAYOUT, STRING_LAYOUT),
+                            arena
+                    );
+                } catch (NoSuchMethodException | IllegalAccessException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+
+            return stub;
+        }
+
+        private static long buildModelImpl(long impl, MemorySegment codeSegment) {
+            try {
+                final LanguageServer server = fromObjectHandle(impl);
+                final var code = codeSegment.reinterpret(Integer.MAX_VALUE).getString(0);
+                return toObjectHandle(server.buildModel(code));
+            } catch (Throwable e) {
+                fatalError(e);
+                return toObjectHandle(null);
+            }
+        }
+
+        @Override
+        public void serialize(LanguageServer server) {
+            set("impl", server);
+            set("buildModel", buildModelImpl());
+        }
+    }
+
+    private static final class SemanticModelObjectDescriptor extends ModernObjectDescriptor<SemanticModel> {
+        private static volatile MemorySegment lookupTypeImpl;
+
+        public SemanticModelObjectDescriptor() {
+            super(
+                    MemoryLayout.structLayout(
+                            JVM_HANDLE_LAYOUT.withName("impl"),
+                            JVM_HANDLE_LAYOUT.withName("root"),
+                            JVM_HANDLE_LAYOUT.withName("invalidRanges"),
+                            JVM_HANDLE_LAYOUT.withName("diagnostics"),
+                            JVM_HANDLE_LAYOUT.withName("typeDefinitions"),
+                            VMT_STUB_LAYOUT.withName("lookupType")
+                    ),
+                    SemanticModel.class
+            );
+        }
+
+        private static MemorySegment lookupTypeImpl() {
+            final var stub = SemanticModelObjectDescriptor.lookupTypeImpl;
+            if (stub == null) {
+                try {
+                    return SemanticModelObjectDescriptor.lookupTypeImpl = linker.upcallStub(
+                            MethodHandles.lookup().findStatic(
+                                    SemanticModelObjectDescriptor.class, "lookupTypeImpl",
+                                    MethodType.methodType(JVM_HANDLE_CLASS, JVM_HANDLE_CLASS, STRING_CLASS)
+                            ),
+                            FunctionDescriptor.of(JVM_HANDLE_LAYOUT, JVM_HANDLE_LAYOUT, STRING_LAYOUT),
+                            arena
+                    );
+                } catch (NoSuchMethodException | IllegalAccessException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+
+            return stub;
+        }
+
+        private static long lookupTypeImpl(long impl, MemorySegment codeSegment) {
+            try {
+                final SemanticModel model = fromObjectHandle(impl);
+                final var name = codeSegment.reinterpret(Integer.MAX_VALUE).getString(0);
+                return toObjectHandle(model.lookupType(name));
+            } catch (Throwable e) {
+                fatalError(e);
+                return toObjectHandle(null);
+            }
+        }
+
+        @Override
+        public void serialize(SemanticModel model) {
+            set("impl", model);
+            set("root", model.root());
+            set("invalidRanges", model.invalidRanges());
+            set("diagnostics", model.diagnostics());
+            set("typeDefinitions", model.typeDefinitions());
+            set("lookupType", lookupTypeImpl());
+        }
+    }
+
+    private static final class SemanticSymbolObjectDescriptor extends ModernObjectDescriptor<SemanticSymbol> {
+        private static volatile MemorySegment constructImpl;
+
+        public SemanticSymbolObjectDescriptor() {
+            super(
+                    MemoryLayout.structLayout(
+                            JVM_HANDLE_LAYOUT.withName("impl"),
+                            JVM_HANDLE_LAYOUT.withName("definition"),
+                            JVM_HANDLE_LAYOUT.withName("references"),
+                            JVM_HANDLE_LAYOUT.withName("owner"),
+                            JVM_HANDLE_LAYOUT.withName("param1"),
+                            JVM_HANDLE_LAYOUT.withName("param2"),
+                            JVM_HANDLE_LAYOUT.withName("param3"),
+                            JVM_HANDLE_LAYOUT.withName("param4"),
+                            STRING_LAYOUT.withName("name"),
+                            VMT_STUB_LAYOUT.withName("construct"),
+                            ValueLayout.JAVA_INT.withName("kind"),
+                            ValueLayout.JAVA_INT.withName("flags")
+                    ),
+                    SemanticSymbol.class
+            );
+        }
+
+        private static MemorySegment constructImpl() {
+            final var stub = SemanticSymbolObjectDescriptor.constructImpl;
+            if (stub == null) {
+                try {
+                    return SemanticSymbolObjectDescriptor.constructImpl = linker.upcallStub(
+                            MethodHandles.lookup().findStatic(
+                                    SemanticSymbolObjectDescriptor.class, "constructImpl",
+                                    MethodType.methodType(JVM_HANDLE_CLASS, JVM_HANDLE_CLASS, int.class, ARRAY_CLASS)
+                            ),
+                            FunctionDescriptor.of(JVM_HANDLE_LAYOUT, JVM_HANDLE_LAYOUT, ValueLayout.JAVA_INT, ARRAY_LAYOUT),
+                            arena
+                    );
+                } catch (NoSuchMethodException | IllegalAccessException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+
+            return stub;
+        }
+
+        private static long constructImpl(long impl, int size, MemorySegment handleSegment) {
+            try {
+                final TypeSymbol symbol = fromObjectHandle(impl);
+                final List<TypeLikeSymbol> objects = List.of(readHandleArray(size, handleSegment));
+                return toObjectHandle(symbol.construct(objects));
+            } catch (Throwable e) {
+                fatalError(e);
+                return toObjectHandle(null);
+            }
+        }
+
+        @Override
+        public void serialize(SemanticSymbol symbol) {
+            set("impl", symbol);
+            set("kind", symbolKind(symbol.kind()));
+            set("name", symbol.name());
+            set("definition", symbol.definition());
+            set("references", symbol.references());
+            if (symbol instanceof SemanticSymbolWithOwner withOwner) {
+                set("owner", withOwner.owner());
+            } else {
+                setNull("owner");
+            }
+            switch (symbol) {
+                case FunctionSymbol functionSymbol -> {
+                    set("flags", functionSymbol.isNative(), functionSymbol.isVirtual(), functionSymbol.isAbstract(), functionSymbol.isOverride());
+                    set("param1", functionSymbol.overriddenFunction());
+                    set("param2", functionSymbol.parameters());
+                    set("param3", functionSymbol.returnType());
+                    set("param4", functionSymbol.locals());
+                }
+                case VariableSymbol variableSymbol -> {
+                    set("param1", variableSymbol.type());
+                }
+                case TypeSymbol typeSymbol -> {
+                    set("flags", typeSymbol.isAbstract());
+                    set("param1", typeSymbol.baseTypes());
+                    set("param2", typeSymbol.typeArguments());
+                    set("param3", typeSymbol.originalDefinition());
+                    set("param4", typeSymbol.members());
+                    set("construct", constructImpl());
+                }
+                case TypeParameterSymbol typeParameterSymbol -> {
+                    set("param1", typeParameterSymbol.bounds());
+                }
+            }
         }
     }
 }

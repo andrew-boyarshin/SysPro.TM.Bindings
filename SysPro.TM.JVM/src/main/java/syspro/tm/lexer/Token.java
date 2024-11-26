@@ -1,6 +1,7 @@
 package syspro.tm.lexer;
 
 import syspro.tm.parser.AnySyntaxKind;
+import syspro.tm.parser.TextSpan;
 
 public abstract sealed class Token permits BadToken, IdentifierToken, IndentationToken, KeywordToken, LiteralToken, SymbolToken {
 
@@ -45,4 +46,33 @@ public abstract sealed class Token permits BadToken, IdentifierToken, Indentatio
     public abstract Token withTrailingTriviaLength(int trailingTriviaLength);
 
     public abstract AnySyntaxKind toSyntaxKind();
+
+    /**
+     * Token source text interval, excluding trivia.
+     *
+     * @see Token#fullSpan()
+     */
+    public final TextSpan span() {
+        var start = this.start;
+        var length = end - start + 1;
+
+        var leadingTriviaWidth = leadingTriviaLength;
+        start += leadingTriviaWidth;
+        length -= leadingTriviaWidth;
+
+        length -= trailingTriviaLength;
+
+        assert length >= 0;
+        return new TextSpan(start, length);
+    }
+
+    /**
+     * Token source text interval, including trivia.
+     *
+     * @see Token#span()
+     */
+    public final TextSpan fullSpan() {
+        final var fullLength = end - start + 1;
+        return new TextSpan(start, fullLength);
+    }
 }
