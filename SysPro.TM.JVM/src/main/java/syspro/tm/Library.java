@@ -1001,8 +1001,8 @@ public final class Library {
         @Override
         public void serialize(ParseResult result) {
             set("root", result.root());
-            set("invalidRanges", result.invalidRanges());
-            set("diagnostics", result.diagnostics());
+            set("invalidRanges", List.copyOf(result.invalidRanges()));
+            set("diagnostics", List.copyOf(result.diagnostics()));
         }
     }
 
@@ -1276,9 +1276,9 @@ public final class Library {
         public void serialize(SemanticModel model) {
             set("impl", model);
             set("root", model.root());
-            set("invalidRanges", model.invalidRanges());
-            set("diagnostics", model.diagnostics());
-            set("typeDefinitions", model.typeDefinitions());
+            set("invalidRanges", List.copyOf(model.invalidRanges()));
+            set("diagnostics", List.copyOf(model.diagnostics()));
+            set("typeDefinitions", List.copyOf(model.typeDefinitions()));
             set("lookupType", lookupTypeImpl());
         }
     }
