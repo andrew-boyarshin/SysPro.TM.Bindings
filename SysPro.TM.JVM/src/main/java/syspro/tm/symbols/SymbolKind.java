@@ -1,41 +1,41 @@
 package syspro.tm.symbols;
 
 public enum SymbolKind {
-    Class,
-    Object,
-    Interface,
-    Field,
-    Local,
-    Parameter,
-    Function,
-    TypeParameter,
+    CLASS,
+    OBJECT,
+    INTERFACE,
+    FIELD,
+    LOCAL,
+    PARAMETER,
+    FUNCTION,
+    TYPE_PARAMETER,
     ;
 
     public boolean isType() {
         return switch (this) {
-            case Class, Object, Interface -> true;
-            case Field, Local, Parameter, Function, TypeParameter -> false;
+            case CLASS, OBJECT, INTERFACE -> true;
+            case FIELD, LOCAL, PARAMETER, FUNCTION, TYPE_PARAMETER -> false;
         };
     }
 
     public boolean isTypeLike() {
         return switch (this) {
-            case Class, Object, Interface, TypeParameter -> true;
-            case Field, Local, Parameter, Function -> false;
+            case CLASS, OBJECT, INTERFACE, TYPE_PARAMETER -> true;
+            case FIELD, LOCAL, PARAMETER, FUNCTION -> false;
         };
     }
 
     public boolean isVariable() {
         return switch (this) {
-            case Field, Local, Parameter -> true;
-            case Class, Object, Interface, Function, TypeParameter -> false;
+            case FIELD, LOCAL, PARAMETER -> true;
+            case CLASS, OBJECT, INTERFACE, FUNCTION, TYPE_PARAMETER -> false;
         };
     }
 
     public boolean isMember() {
         return switch (this) {
-            case Field, Function -> true;
-            case Class, Object, Interface, Local, Parameter, TypeParameter -> false;
+            case FIELD, FUNCTION -> true;
+            case CLASS, OBJECT, INTERFACE, LOCAL, PARAMETER, TYPE_PARAMETER -> false;
         };
     }
 }

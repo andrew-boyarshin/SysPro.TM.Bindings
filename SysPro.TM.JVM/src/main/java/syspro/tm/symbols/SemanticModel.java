@@ -26,7 +26,7 @@ public interface SemanticModel {
     Collection<Diagnostic> diagnostics();
 
     /**
-     * A list of all type definitions in the source input.
+     * A list of all type definitions in the source input. Doesn't include built-in types, such as {@code Int64}.
      */
     List<? extends TypeSymbol> typeDefinitions();
 

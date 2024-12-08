@@ -652,6 +652,10 @@ public final class Library {
             }
         }
 
+        protected final void set(String name, boolean flag) {
+            set(name, new boolean[] {flag});
+        }
+
         protected final void set(String name, boolean... flags) {
             var result = 0;
             var bit = 0;
@@ -1018,7 +1022,6 @@ public final class Library {
                             ValueLayout.JAVA_INT.withName("slotCount"),
                             JVM_HANDLE_LAYOUT.withName("token"),
                             JVM_HANDLE_LAYOUT.withName("slots"),
-                            JVM_HANDLE_LAYOUT.withName("type"),
                             JVM_HANDLE_LAYOUT.withName("symbol")
                     ),
                     SyntaxNode.class
@@ -1076,10 +1079,8 @@ public final class Library {
             set("slots", nodeSlots);
 
             if (node instanceof SyntaxNodeWithSymbols withSymbols) {
-                set("type", withSymbols.type());
                 set("symbol", withSymbols.symbol());
             } else {
-                setNull("type");
                 setNull("symbol");
             }
         }
@@ -1291,7 +1292,6 @@ public final class Library {
                     MemoryLayout.structLayout(
                             JVM_HANDLE_LAYOUT.withName("impl"),
                             JVM_HANDLE_LAYOUT.withName("definition"),
-                            JVM_HANDLE_LAYOUT.withName("references"),
                             JVM_HANDLE_LAYOUT.withName("owner"),
                             JVM_HANDLE_LAYOUT.withName("param1"),
                             JVM_HANDLE_LAYOUT.withName("param2"),
@@ -1343,7 +1343,6 @@ public final class Library {
             set("kind", symbolKind(symbol.kind()));
             set("name", symbol.name());
             set("definition", symbol.definition());
-            set("references", symbol.references());
             if (symbol instanceof SemanticSymbolWithOwner withOwner) {
                 set("owner", withOwner.owner());
             } else {
@@ -1352,10 +1351,9 @@ public final class Library {
             switch (symbol) {
                 case FunctionSymbol functionSymbol -> {
                     set("flags", functionSymbol.isNative(), functionSymbol.isVirtual(), functionSymbol.isAbstract(), functionSymbol.isOverride());
-                    set("param1", functionSymbol.overriddenFunction());
-                    set("param2", functionSymbol.parameters());
-                    set("param3", functionSymbol.returnType());
-                    set("param4", functionSymbol.locals());
+                    set("param1", functionSymbol.parameters());
+                    set("param2", functionSymbol.returnType());
+                    set("param3", functionSymbol.locals());
                 }
                 case VariableSymbol variableSymbol -> {
                     set("param1", variableSymbol.type());
