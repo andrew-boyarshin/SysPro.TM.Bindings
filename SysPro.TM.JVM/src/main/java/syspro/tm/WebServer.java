@@ -66,6 +66,20 @@ public final class WebServer {
         Library.waitForWebServerExitWithTimeout(timeout.toMillis());
     }
 
+    volatile static boolean shouldWaitForWebServerExitOnFatalErrors = false;
+
+    /**
+     * In the event of a fatal error, block the current thread indefinitely until web server has stopped.
+     * The web server is stopped when platform-specific "stop" signal is sent to the JVM.
+     * In IntelliJ IDEA that can be done by pressing the red rectangle in the "Run" pane.
+     * <p>
+     * Warning: after fatal errors the internal state is undefined and likely to be inconsistent.
+     * Dev Tools might not work properly or display data that doesn't make sense. Do not trust the output.
+     */
+    public static void waitForWebServerExitOnFatalErrors() {
+        shouldWaitForWebServerExitOnFatalErrors = true;
+    }
+
     private static void stopHook() {
         Library.stopWebServer();
     }
