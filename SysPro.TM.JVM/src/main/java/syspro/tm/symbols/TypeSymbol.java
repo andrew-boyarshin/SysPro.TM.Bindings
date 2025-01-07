@@ -27,6 +27,13 @@ public non-sealed interface TypeSymbol extends TypeLikeSymbol {
     TypeSymbol originalDefinition();
 
     /**
+     * Returns {@code true} if this symbol is a canonical type symbol instance.
+     */
+    default boolean isOriginalDefinition() {
+        return originalDefinition() == this;
+    }
+
+    /**
      * Optional operation: construct a derived symbol with a given mapping of type parameters to argument types.
      */
     TypeSymbol construct(List<? extends TypeLikeSymbol> typeArguments);

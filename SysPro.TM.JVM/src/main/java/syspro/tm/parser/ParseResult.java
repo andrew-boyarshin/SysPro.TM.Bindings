@@ -17,4 +17,11 @@ public interface ParseResult {
      * All found problems with their locations in the source input.
      */
     Collection<Diagnostic> diagnostics();
+
+    /**
+     * Find the most specific syntax tree node at the specified position.
+     */
+    default SyntaxNode nodeAtPosition(int position) {
+        return SyntaxUtils.nodeAtPosition(root(), position);
+    }
 }
